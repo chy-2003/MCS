@@ -71,5 +71,9 @@ int main() {
                 Same = 0;
 
     printf("Check Same = %d\n", Same);
+    checkCuda(cudaFree(a));
+    checkCuda(cudaFree(b));
+    checkCuda(cudaFree(c_CPU));
+    checkCuda(cudaFree(c_GPU));
     return 0;
 }
