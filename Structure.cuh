@@ -4,7 +4,7 @@
 #include <cstdio>
 #include "CudaInfo.cuh"
 
-struct Vec3 {
+struct Vec3 {                                                                                //3元向量
     double x, y, z;
     Vec3() : x(0), y(0), z(0) {}
     Vec3(double _x, double _y, double _z) : x(_x), y(_y), z(_z) {}
@@ -16,7 +16,7 @@ __global__ void Rev(Vec3 *a, Vec3 *ans) { ans->x = -a->x; ans->y = -a->y; ans->z
 __global__ void Dec(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x - b->x; ans->y = a->y - b->y; ans->z = a->z - b->z; return; }
 __global__ void InMul(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x * b->x; ans->y = a->y * b->y; ans->z = a->z * b->z; return; }
 
-struct Vec9 {
+struct Vec9 {                                                                                //3*3矩阵
     double xx, xy, xz, yx, yy, yz, zx, zy, zz;
     Vec9() : xx(0), xy(0), xz(0), yx(0), yy(0), yz(0), zx(0), zy(0), zz(0) {}
     Vec9(double _xx, double _yy, double _zz) : xx(_xx), xy(0), xz(0), yx(0), yy(_yy), yz(0), zx(0), zy(0), zz(_zz) {}
@@ -47,23 +47,23 @@ __global__ void Del(Vec9 *a, Vec9 *b, Vec9 *ans) {
     ans->zx = a->zx - b->zx; ans->zy = a->zy - b->zy; ans->zz = a->zz - b->zz;
     return; 
 }
-__global__ void MaMul(Vec9 *a, Vec9 *b, Vec9 *ans) {
+__global__ void MaMul(Vec9 *a, Vec9 *b, Vec9 *ans) {                                         //3*3矩阵乘法
     ans->xx = a->xx * b->xx + a->xy * b->yx + a->xz * b->zx; ans->xy = a->xx * b->xy + a->xy * b->yy + a->xz * b->zy; ans->xz = a->xx * b->xz + a->xy * b->yz + a->xz * b->zz; 
     ans->yx = a->yx * b->xx + a->yy * b->yx + a->yz * b->zx; ans->yy = a->yx * b->xy + a->yy * b->yy + a->yz * b->zy; ans->yz = a->yx * b->xz + a->yy * b->yz + a->yz * b->zz; 
     ans->zx = a->zx * b->xx + a->zy * b->yx + a->zz * b->zx, ans->zy = a->zx * b->xy + a->zy * b->yy + a->zz * b->zy; ans->zz = a->zx * b->xz + a->zy * b->yz + a->zz * b->zz;
     return;
 }
-__global__ void CoMul(Vec3 *a, Vec3 *b, Vec9 *ans) {
+__global__ void CoMul(Vec3 *a, Vec3 *b, Vec9 *ans) {                                         //笛卡尔积
     ans->xx = a->x * b->x; ans->xy = a->x * b->y; ans->xz = a->x * b->z;
     ans->yx = a->y * b->x; ans->yy = a->y * b->y; ans->yz = a->y * b->z;
     ans->zx = a->z * b->x; ans->zy = a->z * b->y; ans->zz = a->z * b->z;
     return;
 }
 
-struct Bond {
+struct Bond {                                                                                 //二点之间的作用，前向星式存储
     int Gx, Gy, Gz, t;                                                                        //跨原胞位移， 指向原子原胞内编号
     Bond* Next;                                                                               //前向星
-    Vec9* A;                                                                                  //s*A*t 关系
+    Vec9* A;                                                                                  //s*A*t 关系，s为bond链首
     Bond() : Gx(0), Gy(0), Gz(0), t(0), A() {}
     ~Bond() {}                                                                                //【重要】 务必保证 DestroyBond 在析构函数之前被调用
 };
@@ -74,8 +74,8 @@ void DestroyBond(Bond *self) {
     return;
 }
 
-struct Dot {
-    Bond *bonds;
+struct Dot {                                                                                  //原胞内有意义的点，在UnitCell中以数组存在
+    Bond *bonds;                                                                              //前向星起始位置
     Vec3 *Pos;                                                                                //原胞内分数坐标
     Vec3 *a;                                                                                  //S或P等三个方向
     Vec9 *A;                                                                                  //a*A*a 各向异性
@@ -90,13 +90,13 @@ void DestroyDot(Dot *self) {
     //checkCuda(cudaFree(self));                                                              //保留 Dot 本身，在 DestroyUnitCell 时作为数组销毁
     return;
 }
-void _AppendBond(Dot *target, Bond *val) {
+void _AppendBond(Dot *target, Bond *val) {                                                    //加入bond，前向星操作
     val->Next = target->bonds;
     target->bonds = val;
     return;
 }
 
-struct UnitCell {
+struct UnitCell {                                                                             //原胞，其中Dots为数组而非单个指针
     Vec3 a, b, c;                                                                             //原胞基失
     int N;                                                                                    //磁性原子/电偶极子数量
     Dot* Dots;                                                                                //磁性原子/极化
@@ -114,28 +114,28 @@ void InitUnitCell(UnitCell *self, int N, Vec3 a, Vec3 b, Vec3 c) {
     }
     return;
 }
-void SetDotPos(UnitCell *self, int s, Vec3 a) {
+void SetDotPos(UnitCell *self, int s, Vec3 a) {                                              //设定点位置（分数坐标），传入参数为原胞指针、点编号、点位置
     Vec3 *Temp = NULL;
     checkCuda(cudaMallocManaged(&Temp, sizeof(Vec3)));
     *Temp = a;
     (self->Dots)[s].Pos = Temp;
     return;
 }
-void SetDotVal(UnitCell *self, int s, Vec3 a) {
+void SetDotVal(UnitCell *self, int s, Vec3 a) {                                              //设定点上向量
     Vec3 *Temp = NULL;
     checkCuda(cudaMallocManaged(&Temp, sizeof(Vec3)));
     *Temp = a;
     (self->Dots)[s].a = Temp;
     return;
 }
-void SetDotAni(UnitCell *self, int s, Vec9 A) {
+void SetDotAni(UnitCell *self, int s, Vec9 A) {                                              //设定点各向异性
     Vec9 *Temp = NULL;
     checkCuda(cudaMallocManaged(&Temp, sizeof(Vec9)));
     *Temp = A;
     (self->Dots)[s].A = Temp;
     return;
 }
-void AppendBond(UnitCell *self, int s, int t, int Gx, int Gy, int Gz, Vec9 A) {
+void AppendBond(UnitCell *self, int s, int t, int Gx, int Gy, int Gz, Vec9 A) {              //添加bond接口，传入原胞指针、起始点编号、终止点编号、跨晶格偏移和作用关系
     Bond *Temp = NULL;
     checkCuda(cudaMallocManaged(&Temp, sizeof(Bond)));
     Temp->Gx = Gx; Temp->Gy = Gy; Temp->Gz = Gz;
@@ -178,7 +178,7 @@ void DestroySuperCell(SuperCell *self) {
     return;
 }
 
-SuperCell* InitStructure(SuperCell *self, FILE *file) {
+SuperCell* InitStructure(SuperCell *self, FILE *file) {                                      //从文件读取结构信息以及相互关联信息，不包括蒙卡部分
     fprintf(stderr, "[INFO] Start importing structure data.\n");
     int a, b, c;
     if (fscanf(file, "%d%d%d", &a, &b, &c) != 3) {
