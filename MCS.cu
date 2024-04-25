@@ -2,7 +2,14 @@
 #include <cassert>
 #include <chrono>
 
+#include <omp.h>
 #include "Structure.cuh"
+#include "Runtime.cuh"
+
+
+//compile args : nvcc MCS.cu -o MCS -Xcompiler -openmp
+
+//#define __MCS_DEBUG__
 
 void CheckInput(SuperCell *self) {
     fprintf(stdout, "SuperCell Scale : %d %d %d\n", self->a, self->b, self->c);
@@ -31,7 +38,29 @@ void CheckInput(SuperCell *self) {
     return;
 }
 
+void CheckMesh(rMesh *self, SuperCell *superCell, int x, int y, int z) {
+    fprintf(stdout, "CheckMesh %d, (%d, %d, %d)\n", (int)self, x, y, z); fflush(stdout);
+    int n = superCell->unitCell->N;
+    int id = z * (superCell->a * superCell->b) + y * (superCell->a) + x;
+    fprintf(stdout, "    Dots : %d\n", n); fflush(stdout);
+    for (int i = 0; i < n; ++i) {
+        fprintf(stdout, "    Dot %d, Val : (%.2lf, %.2lf, %.2lf)\n", i, \
+            ((self->Unit + id)->Dots + i)->x, ((self->Unit + id)->Dots + i)->y,((self->Unit + id)->Dots + i)->z);
+    }
+    return;
+}
+
 int main() {
+#ifdef __MCS_DEBUG__
+    fprintf(stdout, "Check OpenMP.\n");
+    omp_set_num_threads(8);
+    #pragma omp parallel 
+    {
+        fprintf(stdout, "thread = %d/%d\n", omp_get_thread_num(), omp_get_max_threads());
+    }
+    fprintf(stdout, "Check OpenMP End.\n\n\n\n\n\n\n");
+    fflush(stdout);
+#endif
     SuperCell *superCell = NULL;
     FILE *structureInput = fopen("Input_Structure", "r");
     superCell = InitStructure(superCell, structureInput);
@@ -39,7 +68,17 @@ int main() {
         fprintf(stderr, "[ERROR] Failed loading structure. Exit.\n");
         return 0;
     }
-    //CheckInput(superCell);
+#ifdef __MCS_DEBUG__
+    CheckInput(superCell);
+    fprintf(stdout, "Check Input End.\n\n\n\n\n\n\n");
+    fflush(stdout);
+#endif
+    fprintf(stdout, "BUILDMESH START.\n"); fflush(stdout);
+    rMesh *Mesh = NULL;
+    Mesh = BuildRMesh(Mesh, superCell);
+    fprintf(stdout, "BUILDMESH END.\n"); fflush(stdout);
+    CheckMesh(Mesh, superCell, 15, 15, 0);
+    DestroyRMesh(Mesh, superCell);
     DestroySuperCell(superCell);
     return 0;
 }
