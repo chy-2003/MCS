@@ -39,7 +39,7 @@ int main() {
         fprintf(stderr, "[ERROR] Failed loading structure. Exit.\n");
         return 0;
     }
-    CheckInput(superCell);
+    //CheckInput(superCell);
     DestroySuperCell(superCell);
     return 0;
 }
