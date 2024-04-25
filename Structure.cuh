@@ -1,13 +1,13 @@
 #ifndef __MCS_STRUCTURE__
 #define __MCS_STRUCTURE__
 
+#include <cstdio>
 #include "CudaInfo.cuh"
-#define TypeUse long double
 
 struct Vec3 {
-    TypeUse x, y, z;
+    double x, y, z;
     Vec3() : x(0), y(0), z(0) {}
-    Vec3(TypeUse _x, TypeUse _y, TypeUse _z) : x(_x), y(_y), z(_z) {}
+    Vec3(double _x, double _y, double _z) : x(_x), y(_y), z(_z) {}
     ~Vec3() {}
 };
 
@@ -17,12 +17,12 @@ __global__ void Dec(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x - b->x; ans->y 
 __global__ void InMul(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x * b->x; ans->y = a->y * b->y; ans->z = a->z * b->z; return; }
 
 struct Vec9 {
-    TypeUse xx, xy, xz, yx, yy, yz, zx, zy, zz;
+    double xx, xy, xz, yx, yy, yz, zx, zy, zz;
     Vec9() : xx(0), xy(0), xz(0), yx(0), yy(0), yz(0), zx(0), zy(0), zz(0) {}
-    Vec9(TypeUse _xx, TypeUse _yy, TypeUse _zz) : xx(_xx), xy(0), xz(0), yx(0), yy(_yy), yz(0), zx(0), zy(0), zz(_zz) {}
-    Vec9(TypeUse _xx, TypeUse _xy, TypeUse _xz, 
-         TypeUse _yx, TypeUse _yy, TypeUse _yz,
-         TypeUse _zx, TypeUse _zy, TypeUse _zz) :
+    Vec9(double _xx, double _yy, double _zz) : xx(_xx), xy(0), xz(0), yx(0), yy(_yy), yz(0), zx(0), zy(0), zz(_zz) {}
+    Vec9(double _xx, double _xy, double _xz, 
+         double _yx, double _yy, double _yz,
+         double _zx, double _zy, double _zz) :
          xx(_xx), xy(_xy), xz(_xz), 
          yx(_yx), yy(_yy), yz(_yz),
          zx(_zx), zy(_zy), zz(_zz) {}
@@ -60,42 +60,204 @@ __global__ void CoMul(Vec3 *a, Vec3 *b, Vec9 *ans) {
     return;
 }
 
-struct MagBond {
-    int Gx, Gy, Gz, t;   //跨原胞位移， 指向原子原胞内编号
-    MagBond* Next;       //前向星
-    Vec9* J;             //关系
-    MagBond() : Gx(0), Gy(0), Gz(0), Ax(0), Ay(0), J() {}
-    ~MagBond() {}           //【重要】 务必保证 DestroyBond() 在析构函数之前被调用
+struct Bond {
+    int Gx, Gy, Gz, t;                                                                        //跨原胞位移， 指向原子原胞内编号
+    Bond* Next;                                                                               //前向星
+    Vec9* A;                                                                                  //s*A*t 关系
+    Bond() : Gx(0), Gy(0), Gz(0), t(0), A() {}
+    ~Bond() {}                                                                                //【重要】 务必保证 DestroyBond 在析构函数之前被调用
 };
-__global__ DestroyBond(MagBond *self) {
-    if (self->Next != NULL) DestroyBond(self->Next);   //这里保留了悬垂指针，因为马上会被销毁。所以请保证传入的是一个指向对象的正确指针
-    checkCuda(cudaFree(J));
+void DestroyBond(Bond *self) {
+    if (self->Next != NULL) DestroyBond(self->Next);                                          //这里保留了悬垂指针，因为马上会被销毁。所以请保证传入的是一个指向对象的正确指针
+    checkCuda(cudaFree(self->A));
     checkCuda(cudaFree(self));
     return;
 }
 
-struct MagAtom {
-    TypeUse x, y, z;  //原胞内分数坐标
-    Vec3 s;           //S三个方向
-    Vec9 sni;         //晶格关系/各项异性
-    MagBond *bonds;
-    Atom() : x(0), y(0), z(0), s(), ani(), bonds(NULL) {}
-    ~Atom() {}
+struct Dot {
+    Bond *bonds;
+    Vec3 *Pos;                                                                                //原胞内分数坐标
+    Vec3 *a;                                                                                  //S或P等三个方向
+    Vec9 *A;                                                                                  //a*A*a 各向异性
+    Dot() : Pos(NULL), a(NULL), A(NULL), bonds(NULL) {}
+    ~Dot() {}                                                                                 //【重要】  务必保证 DestroyDot 在析构函数前被调用
 };
+void DestroyDot(Dot *self) {
+    if (self->bonds != NULL) DestroyBond(self->bonds);
+    if (self->Pos != NULL) checkCuda(cudaFree(self->Pos));
+    if (self->a != NULL) checkCuda(cudaFree(self->a));
+    if (self->A != NULL) checkCuda(cudaFree(self->A));                                        //这里保留了悬垂指针，所以调用 DestroyDot 之后不应再使用该 Dot 如 _AppendBond
+    //checkCuda(cudaFree(self));                                                              //保留 Dot 本身，在 DestroyUnitCell 时作为数组销毁
+    return;
+}
+void _AppendBond(Dot *target, Bond *val) {
+    val->Next = target->bonds;
+    target->bonds = val;
+    return;
+}
 
 struct UnitCell {
-    int N;                //磁性原子数量
-    Vec3 a, b, c;         //原胞基失
-    MagAtom* magAtoms;          //磁性原子
-    UnitCell() : a(), b(), c(), magAtoms(NULL) {}
-    ~UnitCell() {}
+    Vec3 a, b, c;                                                                             //原胞基失
+    int N;                                                                                    //磁性原子/电偶极子数量
+    Dot* Dots;                                                                                //磁性原子/极化
+    UnitCell() : N(0), a(), b(), c(), Dots(NULL) {}
+    ~UnitCell() {}                                                                            //【重要】  务必保证 DestroyUnitCell 在析构函数前被调用
 };
+void InitUnitCell(UnitCell *self, int N, Vec3 a, Vec3 b, Vec3 c) {
+    self->N = N;
+    self->a = a; self->b = b; self->c = c;
+    checkCuda(cudaMallocManaged(&(self->Dots), N * sizeof(Dot)));
+    for (int i = 0; i < N; ++i) {
+        (self->Dots)[i].bonds = NULL;
+        (self->Dots)[i].a = NULL;
+        (self->Dots)[i].A = NULL;
+    }
+    return;
+}
+void SetDotPos(UnitCell *self, int s, Vec3 a) {
+    Vec3 *Temp = NULL;
+    checkCuda(cudaMallocManaged(&Temp, sizeof(Vec3)));
+    *Temp = a;
+    (self->Dots)[s].Pos = Temp;
+    return;
+}
+void SetDotVal(UnitCell *self, int s, Vec3 a) {
+    Vec3 *Temp = NULL;
+    checkCuda(cudaMallocManaged(&Temp, sizeof(Vec3)));
+    *Temp = a;
+    (self->Dots)[s].a = Temp;
+    return;
+}
+void SetDotAni(UnitCell *self, int s, Vec9 A) {
+    Vec9 *Temp = NULL;
+    checkCuda(cudaMallocManaged(&Temp, sizeof(Vec9)));
+    *Temp = A;
+    (self->Dots)[s].A = Temp;
+    return;
+}
+void AppendBond(UnitCell *self, int s, int t, int Gx, int Gy, int Gz, Vec9 A) {
+    Bond *Temp = NULL;
+    checkCuda(cudaMallocManaged(&Temp, sizeof(Bond)));
+    Temp->Gx = Gx; Temp->Gy = Gy; Temp->Gz = Gz;
+    Temp->t = t;
+    checkCuda(cudaMallocManaged(&(Temp->A), sizeof(Vec9)));
+    *(Temp->A) = A;
+    _AppendBond((self->Dots) + s, Temp);
+    return;
+}
+void DestroyUnitCell(UnitCell *self) {
+    int N = self->N;
+    for (int i = 0; i < N; ++i)
+        DestroyDot((self->Dots) + i);
+    checkCuda(cudaFree(self->Dots));
+    checkCuda(cudaFree(self));
+    return;
+}
 
 struct SuperCell {
     int a, b, c;
     UnitCell* unitCell;
-    UnitCell() : unitCell(NULL) {}
-    ~UnitCell() {}
+    SuperCell() : a(1), b(1), c(1), unitCell(NULL) {}
+    ~SuperCell() {}                                                                           //【重要】  务必保证 DestroySuperCell 在析构函数前被调用
 };
+SuperCell* InitSuperCell(SuperCell *self, int a, int b, int c) {
+    checkCuda(cudaMallocManaged(&self, sizeof(SuperCell)));
+    self->a = a; self->b = b; self->c = c;
+    self->unitCell = NULL;
+    checkCuda(cudaMallocManaged(&(self->unitCell), sizeof(UnitCell)));
+    self->unitCell->a = Vec3();
+    self->unitCell->b = Vec3();
+    self->unitCell->c = Vec3();
+    self->unitCell->N = 0;
+    self->unitCell->Dots = NULL;
+    return self;
+};
+void DestroySuperCell(SuperCell *self) {
+    DestroyUnitCell(self->unitCell);
+    checkCuda(cudaFree(self));
+    return;
+}
+
+SuperCell* InitStructure(SuperCell *self, FILE *file) {
+    fprintf(stderr, "[INFO] Start importing structure data.\n");
+    int a, b, c;
+    if (fscanf(file, "%d%d%d", &a, &b, &c) != 3) {
+        fprintf(stderr, "[ERROR] Unable to get supercell scale.\n");
+        return NULL;
+    }
+    Vec3 A, B, C;
+    int N;
+    if (fscanf(file, "%lf%lf%lf", &(A.x), &(A.y), &(A.z)) != 3) {
+        fprintf(stderr, "[ERROR] Unable to get unitcell arg a.\n");
+        return NULL;
+    }
+    if (fscanf(file, "%lf%lf%lf", &(B.x), &(B.y), &(B.z)) != 3) {
+        fprintf(stderr, "[ERROR] Unable to get unicell arg b.\n");
+        return NULL;
+    }
+    if (fscanf(file, "%lf%lf%lf", &(C.x), &(C.y), &(C.z)) != 3) {
+        fprintf(stderr, "[ERROR] Unable to get unicell arg c.\n");
+        return NULL;
+    }
+    if (fscanf(file, "%d", &N) != 1) {
+        fprintf(stderr, "[ERROR] Unable to get number of elements in unitcell.\n");
+        return NULL;
+    }
+    self = InitSuperCell(self, a, b, c);
+    InitUnitCell(self->unitCell, N, A, B, C);
+    Vec9 D;
+    for (int i = 0; i < N; ++i) {
+        if (fscanf(file, "%lf%lf%lf", &(A.x), &(A.y), &(A.z)) != 3) {
+            fprintf(stderr, "[ERROR] Unable to get %dth position.\n", i);
+            DestroySuperCell(self);
+            return NULL;
+        }
+        SetDotPos(self->unitCell, i, A);
+        if (fscanf(file, "%lf%lf%lf", &(A.x), &(A.y), &(A.z)) != 3) {
+            fprintf(stderr, "[ERROR] Unable to get %dth val.\n", i);
+            DestroySuperCell(self);
+            return NULL;
+        }
+        SetDotVal(self->unitCell, i, A);
+        if (fscanf(file, "%lf%lf%lf%lf%lf%lf%lf%lf%lf", &(D.xx), &(D.xy), &(D.xz), &(D.yx), &(D.yy), &(D.yz), &(D.zx), &(D.zy), &(D.zz)) != 9) {
+            fprintf(stderr, "[ERROR] Unable to get %dth args.\n", i);
+            DestroySuperCell(self);
+            return NULL;
+        }
+        SetDotAni(self->unitCell, i, D);
+    }
+    if (fscanf(file, "%d", &N) != 1) {
+        fprintf(stderr, "[ERROR] Unable to get number of bonds.\n");
+        DestroySuperCell(self);
+        return NULL;
+    }
+    int x, y;
+    for (int i = 0; i < N; ++i) {
+        if (fscanf(file, "%d%d", &x, &y) != 2) {
+            fprintf(stderr, "[ERROR] Missing Bond info s/t.\n");
+            DestroySuperCell(self);
+            return NULL;
+        }
+        if (x < 0 || x >= self->unitCell->N || y < 0 || y >= self->unitCell->N) {
+            fprintf(stderr, "[ERROR] Invalid index of bond %d.\n", i);
+            DestroySuperCell(self);
+            return NULL;
+        }
+        if (fscanf(file, "%d%d%d", &a, &b, &c) != 3) {
+            fprintf(stderr, "[ERROR] Missing overlat. info of bond %d.\n", i);
+            DestroySuperCell(self);
+            return NULL;
+        }
+        if (fscanf(file, "%lf%lf%lf%lf%lf%lf%lf%lf%lf", &(D.xx), &(D.xy), &(D.xz), &(D.yx), &(D.yy), &(D.yz), &(D.zx), &(D.zy), &(D.zz)) != 9) {
+            fprintf(stderr, "[ERROR] Unable to get %dth bond info.\n", i);
+            DestroySuperCell(self);
+            return NULL;
+        }
+        AppendBond(self->unitCell, x, y, a, b, c, D);
+        AppendBond(self->unitCell, y, x, a, b, c, D);
+    }
+    fprintf(stderr, "[INFO] Structure data successfully imported.\n");
+    return self;
+}
 
 #endif

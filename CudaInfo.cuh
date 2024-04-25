@@ -3,7 +3,7 @@
 
 inline cudaError_t checkCuda(cudaError_t result) {
     if (result != cudaSuccess) {
-        fprintf(stderr, "CUDA Runtime [ERROR] : %s\n", cudaGetErrorString(result));
+        fprintf(stderr, "[ERROR] CUDA Runtime error : %s\n", cudaGetErrorString(result));
         assert(result == cudaSuccess);
     }
     return result;
