@@ -8,7 +8,7 @@
 #include "MonteCarlo.cuh"
 
 
-//compile args : nvcc MCS.cu -o MCS -Xcompiler -openmp
+//compile args : nvcc MCS.cu -o MCS -Xcompiler -openmp -Xptxas -O3
 
 //#define __MCS_DEBUG__
 
@@ -98,20 +98,25 @@ int main() {
     checkCuda(cudaMallocManaged(&Tmp, sizeof(int) * ((N + (CUBlockSize << 1) - 1) / (CUBlockSize << 1))));
     for (int i = 0; i < N; ++i) Val[i] = rand() % 10;
     printf("Gen Finished.\n"); fflush(stdout);
-    std::chrono::system_clock::time_point TimeOld = std::chrono::system_clock::now();
+
+
+    std::chrono::steady_clock::time_point TimeOld = std::chrono::steady_clock::now();
     int Ans = 0;
     for (int i = 0; i < N; ++i) Ans += Val[i];
-    std::chrono::system_clock::time_point TimeNew = std::chrono::system_clock::now();
+    std::chrono::steady_clock::time_point TimeNew = std::chrono::steady_clock::now();
     printf("CPU Time Cost(s) : %.6lf, Sum = %d\n", 
-        (double)((TimeNew - TimeOld).count()) * std::chrono::microseconds::period::num / 
-        std::chrono::microseconds::period::den, Ans);
+        std::chrono::duration<double>(TimeNew - TimeOld).count(),
+        Ans);
     fflush(stdout);
-    TimeOld = std::chrono::system_clock::now();
+
+
+
+    TimeOld = std::chrono::steady_clock::now();
     Ans = ReductionSum(Val, N, Tmp);
-    TimeNew = std::chrono::system_clock::now();
+    TimeNew = std::chrono::steady_clock::now();
     printf("GPU Time Cost(s) : %.6lf, Sum = %d\n", 
-        (double)((TimeNew - TimeOld).count()) * std::chrono::microseconds::period::num / 
-        std::chrono::microseconds::period::den, Ans);
+        std::chrono::duration<double>(TimeNew - TimeOld).count(),
+        Ans);
     fflush(stdout);
     checkCuda(cudaFree(Val));
     checkCuda(cudaFree(Tmp));

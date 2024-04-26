@@ -3,7 +3,7 @@
 
 #include "Structure.cuh"
 #include "Runtime.cuh"
-#define CUBlockSize 128
+#define CUBlockSize 256
 
 __global__ void GetEnergy(double *ans, rMesh *mesh, SuperCell *superCell, double *ReductionTemp) {
     //unfinished
