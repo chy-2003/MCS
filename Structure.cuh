@@ -172,10 +172,10 @@ SuperCell* InitSuperCell(SuperCell *self, int a, int b, int c) {
     self->unitCell->Dots = NULL;
     return self;
 };
-void DestroySuperCell(SuperCell *self) {
+SuperCell* DestroySuperCell(SuperCell *self) {
     DestroyUnitCell(self->unitCell);
     checkCuda(cudaFree(self));
-    return;
+    return NULL;
 }
 
 SuperCell* InitStructure(SuperCell *self, FILE *file) {                                      //从文件读取结构信息以及相互关联信息，不包括蒙卡部分

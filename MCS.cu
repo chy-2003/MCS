@@ -11,6 +11,9 @@
 
 //#define __MCS_DEBUG__
 
+#ifdef __MCS_DEBUG__
+
+
 void CheckInput(SuperCell *self) {
     fprintf(stdout, "SuperCell Scale : %d %d %d\n", self->a, self->b, self->c);
     fprintf(stdout, "UnitCell a(%6.2f, %6.2lf, %6.2lf)\n", (self->unitCell->a).x, (self->unitCell->a).y, (self->unitCell->a).z);
@@ -35,20 +38,27 @@ void CheckInput(SuperCell *self) {
             bonds = bonds->Next;
         }
     }
+    fprintf(stdout, "Check Input End.\n\n\n\n\n\n\n");
+    fflush(stdout);
     return;
 }
 
 void CheckMesh(rMesh *self, SuperCell *superCell, int x, int y, int z) {
-    fprintf(stdout, "CheckMesh %d, (%d, %d, %d)\n", (int)self, x, y, z); fflush(stdout);
+    fprintf(stdout, "CheckMesh %d, (%d, %d, %d)\n", (int)self, x, y, z);
     int n = superCell->unitCell->N;
     int id = z * (superCell->a * superCell->b) + y * (superCell->a) + x;
-    fprintf(stdout, "    Dots : %d\n", n); fflush(stdout);
+    fprintf(stdout, "    Dots : %d, id = %d\n", n, id);
     for (int i = 0; i < n; ++i) {
-        fprintf(stdout, "    Dot %d, Val : (%.2lf, %.2lf, %.2lf)\n", i, \
-            ((self->Unit + id)->Dots + i)->x, ((self->Unit + id)->Dots + i)->y,((self->Unit + id)->Dots + i)->z);
+        Vec3 temp = ((self->Unit + id)->Dots)[i];
+        fprintf(stdout, "    Dot %d, Val : (%.2lf, %.2lf, %.2lf)\n", i, temp.x, temp.y, temp.z);
     }
+    fprintf(stdout, "CheckMesh End.\n");
+    fflush(stdout);
     return;
 }
+
+
+#endif
 
 int main() {
 #ifdef __MCS_DEBUG__
@@ -64,21 +74,23 @@ int main() {
     SuperCell *superCell = NULL;
     FILE *structureInput = fopen("Input_Structure", "r");
     superCell = InitStructure(superCell, structureInput);
+    fclose(structureInput);
     if (superCell == NULL) {
         fprintf(stderr, "[ERROR] Failed loading structure. Exit.\n");
         return 0;
     }
 #ifdef __MCS_DEBUG__
     CheckInput(superCell);
-    fprintf(stdout, "Check Input End.\n\n\n\n\n\n\n");
-    fflush(stdout);
 #endif
-    fprintf(stdout, "BUILDMESH START.\n"); fflush(stdout);
     rMesh *Mesh = NULL;
     Mesh = BuildRMesh(Mesh, superCell);
-    fprintf(stdout, "BUILDMESH END.\n"); fflush(stdout);
-    CheckMesh(Mesh, superCell, 15, 15, 0);
-    DestroyRMesh(Mesh, superCell);
-    DestroySuperCell(superCell);
+#ifdef __MCS_DEBUG__
+    CheckMesh(Mesh, superCell, 3, 3, 0);
+#endif
+    Mesh = DestroyRMesh(Mesh, superCell);
+    //fprintf(stdout, "Mesh Destroyed.\n"); fflush(stdout);
+    superCell = DestroySuperCell(superCell);
+    //fprintf(stdout, "SuperCell Destroyed.\n"); fflush(stdout);
+    fprintf(stderr, "[INFO] Program successfully ended.\n");
     return 0;
 }
