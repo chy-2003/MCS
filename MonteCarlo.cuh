@@ -32,7 +32,7 @@ __global__ void GetEnergy(double *ans, rMesh *mesh, SuperCell *superCell, double
 }
 
 template <unsigned int blockSize>
-__device__ void warpReduce(volatile int *sdata, unsigned int tid) {
+__device__ void warpReduce(volatile double *sdata, unsigned int tid) {
     if (blockSize >= 64) sdata[tid] += sdata[tid + 32];
     if (blockSize >= 32) sdata[tid] += sdata[tid + 16];
     if (blockSize >= 16) sdata[tid] += sdata[tid +  8];
@@ -42,8 +42,8 @@ __device__ void warpReduce(volatile int *sdata, unsigned int tid) {
     return;
 }
 template <unsigned int blockSize>
-__global__ void Sum_ReductionMain(int *IData, int *OData, unsigned int n) {
-    extern __shared__ int sdata[];
+__global__ void Sum_ReductionMain(double *IData, double *OData, unsigned int n) {
+    __shared__ double sdata[CUBlockSize];
     unsigned int tid = threadIdx.x;
     unsigned int i = blockIdx.x * (blockSize * 2) + tid;
     unsigned int gridSize = blockSize * 2 * gridDim.x;
@@ -60,16 +60,27 @@ __global__ void Sum_ReductionMain(int *IData, int *OData, unsigned int n) {
     return;
 }
 
-int ReductionSum(int *Tar, int N, int *Tmp) {
+double ReductionSum(double *Tar, int N, double *Tmp) {
     size_t threadsPerBlock = CUBlockSize;
-    size_t numberOfBlocks = (N + (CUBlockSize << 1) - 1) / (CUBlockSize << 1);
-    Sum_ReductionMain<CUBlockSize><<<numberOfBlocks, threadsPerBlock, sizeof(int) * CUBlockSize>>>(Tar, Tmp, N);
-    cudaDeviceSynchronize();
-    int Ans = 0;
-    for (int i = 0; i < numberOfBlocks; ++i) Ans += Tmp[i];
+    size_t numberOfBlocks;
+    double *Swp = NULL;
+    while (1) {
+        numberOfBlocks = (N + (CUBlockSize << 1) - 1) / (CUBlockSize << 1);
+        Sum_ReductionMain<CUBlockSize><<<numberOfBlocks, threadsPerBlock, sizeof(double) * CUBlockSize>>>(Tar, Tmp, N);
+        cudaDeviceSynchronize();
+        checkCuda(cudaGetLastError());
+        N = numberOfBlocks;
+        Swp = Tar; Tar = Tmp; Tmp = Swp;
+        if (N >= (CUBlockSize << 4)) 
+            checkCuda(cudaMemset(Tmp + N, 0, CUBlockSize * sizeof(double)));
+        else
+            break;
+    }
+    double Ans = 0;
+    for (int i = 0; i < N; ++i) Ans += Tar[i];
     return Ans;
 }
-/*
+
 void MonteCarlo_Range(double *ans, SuperCell *superCell, double L, double R, int Points, int NSkip, int NCal) {
     rMesh* RMesh;
     checkCuda(cudaMallocManaged(&RMesh, sizeof(rMesh) * Points));
@@ -99,5 +110,5 @@ void MonteCarlo_Range(double *ans, SuperCell *superCell, double L, double R, int
     for (int i = 0; i < Points; ++i) DestroyRMesh(RMesh + i, superCell);
     checkCuda(cudaFree(RMesh));
 }
-*/
+
 #endif

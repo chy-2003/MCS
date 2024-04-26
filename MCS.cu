@@ -3,12 +3,15 @@
 #include <chrono>
 #include <random>
 #include <omp.h>
+#include "CudaInfo.cuh"
 #include "Structure.cuh"
 #include "Runtime.cuh"
 #include "MonteCarlo.cuh"
 
 
 //compile args : nvcc MCS.cu -o MCS -Xcompiler -openmp -Xptxas -O3
+//  use -arch=sm_86 for 4060ti
+//  nvcc MCS.cu -o MCS -Xcompiler -openmp -Xptxas -O3 -arch=sm_86
 
 //#define __MCS_DEBUG__
 
@@ -59,9 +62,19 @@ void CheckMesh(rMesh *self, SuperCell *superCell, int x, int y, int z) {
 }
 
 
+
+__global__ void Gen(double *tar) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    *(tar + x) = 1.0;
+    return;
+}
+
 #endif
 
+
 int main() {
+
+
 #ifdef __MCS_DEBUG__
     fprintf(stdout, "Check OpenMP.\n");
     omp_set_num_threads(8);
@@ -72,7 +85,6 @@ int main() {
     fprintf(stdout, "Check OpenMP End.\n\n\n\n\n\n\n");
     fflush(stdout);
 #endif
-/*
     SuperCell *superCell = NULL;
     FILE *structureInput = fopen("Input_Structure", "r");
     superCell = InitStructure(superCell, structureInput);
@@ -81,7 +93,6 @@ int main() {
         fprintf(stderr, "[ERROR] Failed loading structure. Exit.\n");
         return 0;
     }
-*/
 #ifdef __MCS_DEBUG__
     CheckInput(superCell);
 #endif
@@ -91,36 +102,27 @@ int main() {
     CheckMesh(Mesh, superCell, 3, 3, 0);
     Mesh = DestroyRMesh_PSelf(Mesh, superCell);
 #endif
-    srand(time(NULL));
+#ifdef __MCS_DEBUG__
     int N = 1 << 22;
-    int *Val = NULL, *Tmp = NULL;
-    checkCuda(cudaMallocManaged(&Val, sizeof(int) * (N + (CUBlockSize << 1))));
-    checkCuda(cudaMallocManaged(&Tmp, sizeof(int) * ((N + (CUBlockSize << 1) - 1) / (CUBlockSize << 1))));
-    for (int i = 0; i < N; ++i) Val[i] = rand() % 10;
+    double *Val = NULL, *Tmp = NULL;
+    checkCuda(cudaMallocManaged(&Val, sizeof(double) * (N + (CUBlockSize << 1))));
+    checkCuda(cudaMallocManaged(&Tmp, sizeof(double) * ((N + (CUBlockSize << 1) - 1) / (CUBlockSize << 1))));
+    size_t threadsPerBlock = 256;
+    size_t numberOfThreads = N / threadsPerBlock;
+    Gen<<<numberOfThreads, threadsPerBlock>>>(Val);
+    cudaDeviceSynchronize();
     printf("Gen Finished.\n"); fflush(stdout);
 
-
     std::chrono::steady_clock::time_point TimeOld = std::chrono::steady_clock::now();
-    int Ans = 0;
-    for (int i = 0; i < N; ++i) Ans += Val[i];
+    double Ans = ReductionSum(Val, N, Tmp);
     std::chrono::steady_clock::time_point TimeNew = std::chrono::steady_clock::now();
-    printf("CPU Time Cost(s) : %.6lf, Sum = %d\n", 
-        std::chrono::duration<double>(TimeNew - TimeOld).count(),
-        Ans);
-    fflush(stdout);
-
-
-
-    TimeOld = std::chrono::steady_clock::now();
-    Ans = ReductionSum(Val, N, Tmp);
-    TimeNew = std::chrono::steady_clock::now();
-    printf("GPU Time Cost(s) : %.6lf, Sum = %d\n", 
+    printf("GPU Time Cost(s) : %.6lf, Sum = %.2lf\n", 
         std::chrono::duration<double>(TimeNew - TimeOld).count(),
         Ans);
     fflush(stdout);
     checkCuda(cudaFree(Val));
     checkCuda(cudaFree(Tmp));
-/*
+#endif
     double L = 30, R = 40;
     int Points = 11;
     double *ans = NULL;
@@ -132,6 +134,5 @@ int main() {
 
     superCell = DestroySuperCell(superCell);
     fprintf(stderr, "[INFO] Program successfully ended.\n");
-*/
     return 0;
 }
