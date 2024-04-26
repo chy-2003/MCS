@@ -16,13 +16,18 @@ struct rMesh {                                                                  
     rMesh() : Unit(NULL) {}
     ~rMesh() {}
 };
-rMesh* DestroyRMesh(rMesh *self, SuperCell *superCell) {
+void DestroyRMesh(rMesh *self, SuperCell *superCell) {
     int N = superCell->a * superCell->b * superCell->c;
     int MaxThreads = omp_get_max_threads();
     #pragma omp parallel for num_threads(MaxThreads)
     for (int i = 0; i < N; ++i) 
         checkCuda(cudaFree((self->Unit + i)->Dots));
     checkCuda(cudaFree(self->Unit));
+    return;
+}
+
+rMesh* DestroyRMesh_PSelf(rMesh *self, SuperCell *superCell) {
+    DestroyRMesh(self, superCell);
     checkCuda(cudaFree(self));
     return NULL;
 }
@@ -36,8 +41,7 @@ __global__ void BuildUnit(rMesh *self, UnitCell *unitCell, int Size) {          
     return;
 }
 
-rMesh* BuildRMesh(rMesh *self, SuperCell *superCell) {                                       //建立网格
-    checkCuda(cudaMallocManaged(&self, sizeof(rMesh)));                                      //定义网格
+void BuildRMesh(rMesh *self, SuperCell *superCell) {                                         //建立网格
     int N = superCell->a * superCell->b * superCell->c;
     checkCuda(cudaMallocManaged(&(self->Unit), sizeof(rUnit) * N));                          //定义网格内数组（Unit），数组内的单个元素为一个rUnit
     int MaxThreads = omp_get_max_threads();
@@ -45,12 +49,17 @@ rMesh* BuildRMesh(rMesh *self, SuperCell *superCell) {                          
     for (int i = 0; i < N; ++i) 
         checkCuda(cudaMallocManaged(&((self->Unit + i)->Dots), 
             sizeof(Vec3) * (superCell->unitCell->N)));                                       //为rUnit分配内存，即申明rUnit的Dots数组
-
     size_t threadsPerBlock = 256;
     size_t numberOfBlocks = (N + threadsPerBlock - 1) / threadsPerBlock;
     BuildUnit<<<numberOfBlocks, threadsPerBlock>>>(self, superCell->unitCell, N);
     cudaDeviceSynchronize();
+    return;
+}
 
+
+rMesh* BuildRMesh_PSelf(rMesh *self, SuperCell *superCell) {                                 //建立网格
+    checkCuda(cudaMallocManaged(&self, sizeof(rMesh)));                                      //定义网格
+    BuildRMesh(self, superCell);
     return self;
 }
 

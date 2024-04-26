@@ -5,6 +5,7 @@
 #include <omp.h>
 #include "Structure.cuh"
 #include "Runtime.cuh"
+#include "MonteCarlo.cuh"
 
 
 //compile args : nvcc MCS.cu -o MCS -Xcompiler -openmp
@@ -82,15 +83,23 @@ int main() {
 #ifdef __MCS_DEBUG__
     CheckInput(superCell);
 #endif
-    rMesh *Mesh = NULL;
-    Mesh = BuildRMesh(Mesh, superCell);
 #ifdef __MCS_DEBUG__
+    rMesh *Mesh = NULL;
+    Mesh = BuildRMesh_PSelf(Mesh, superCell);
     CheckMesh(Mesh, superCell, 3, 3, 0);
+    Mesh = DestroyRMesh_PSelf(Mesh, superCell);
 #endif
-    Mesh = DestroyRMesh(Mesh, superCell);
-    //fprintf(stdout, "Mesh Destroyed.\n"); fflush(stdout);
+/*
+    double L = 30, R = 40;
+    int Points = 11;
+    double *ans = NULL;
+    checkCuda(cudaMallocManaged(&ans, sizeof(double) * Points));
+    MonteCarlo_Range(ans, superCell, L, R, Points);
+    for (int i = 0; i < Points; ++i) 
+        fprintf(stdout, "%.2lf, %.2lf\n", (R - L) / (Points - 1) * i + L, ans[i]);
+    checkCuda(cudaFree(ans));
+*/
     superCell = DestroySuperCell(superCell);
-    //fprintf(stdout, "SuperCell Destroyed.\n"); fflush(stdout);
     fprintf(stderr, "[INFO] Program successfully ended.\n");
     return 0;
 }
