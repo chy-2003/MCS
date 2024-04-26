@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <cassert>
 #include <chrono>
-
+#include <random>
 #include <omp.h>
 #include "Structure.cuh"
 #include "Runtime.cuh"
@@ -72,6 +72,7 @@ int main() {
     fprintf(stdout, "Check OpenMP End.\n\n\n\n\n\n\n");
     fflush(stdout);
 #endif
+/*
     SuperCell *superCell = NULL;
     FILE *structureInput = fopen("Input_Structure", "r");
     superCell = InitStructure(superCell, structureInput);
@@ -80,6 +81,7 @@ int main() {
         fprintf(stderr, "[ERROR] Failed loading structure. Exit.\n");
         return 0;
     }
+*/
 #ifdef __MCS_DEBUG__
     CheckInput(superCell);
 #endif
@@ -89,7 +91,31 @@ int main() {
     CheckMesh(Mesh, superCell, 3, 3, 0);
     Mesh = DestroyRMesh_PSelf(Mesh, superCell);
 #endif
-
+    srand(time(NULL));
+    int N = 1 << 22;
+    int *Val = NULL, *Tmp = NULL;
+    checkCuda(cudaMallocManaged(&Val, sizeof(int) * (N + (CUBlockSize << 1))));
+    checkCuda(cudaMallocManaged(&Tmp, sizeof(int) * ((N + (CUBlockSize << 1) - 1) / (CUBlockSize << 1))));
+    for (int i = 0; i < N; ++i) Val[i] = rand() % 10;
+    printf("Gen Finished.\n"); fflush(stdout);
+    std::chrono::system_clock::time_point TimeOld = std::chrono::system_clock::now();
+    int Ans = 0;
+    for (int i = 0; i < N; ++i) Ans += Val[i];
+    std::chrono::system_clock::time_point TimeNew = std::chrono::system_clock::now();
+    printf("CPU Time Cost(s) : %.6lf, Sum = %d\n", 
+        (double)((TimeNew - TimeOld).count()) * std::chrono::microseconds::period::num / 
+        std::chrono::microseconds::period::den, Ans);
+    fflush(stdout);
+    TimeOld = std::chrono::system_clock::now();
+    Ans = ReductionSum(Val, N, Tmp);
+    TimeNew = std::chrono::system_clock::now();
+    printf("GPU Time Cost(s) : %.6lf, Sum = %d\n", 
+        (double)((TimeNew - TimeOld).count()) * std::chrono::microseconds::period::num / 
+        std::chrono::microseconds::period::den, Ans);
+    fflush(stdout);
+    checkCuda(cudaFree(Val));
+    checkCuda(cudaFree(Tmp));
+/*
     double L = 30, R = 40;
     int Points = 11;
     double *ans = NULL;
@@ -101,5 +127,6 @@ int main() {
 
     superCell = DestroySuperCell(superCell);
     fprintf(stderr, "[INFO] Program successfully ended.\n");
+*/
     return 0;
 }

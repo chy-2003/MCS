@@ -59,17 +59,15 @@ __device__ void CoMul(Vec3 *a, Vec3 *b, Vec9 *ans) {                            
     ans->zx = a->z * b->x; ans->zy = a->z * b->y; ans->zz = a->z * b->z;
     return;
 }
-__device__ void Cal393(Vec3 *s, Vec9 *A, Vec3 *t, double *ans) {                             //s^T \cdot A \cdot t
-    *ans = (s->x * A->xx + s->y * A->yx + s->z * A->zx) * t->x + 
+__device__ double Cal393(Vec3 *s, Vec9 *A, Vec3 *t) {                                       //s^T \cdot A \cdot t
+    return (s->x * A->xx + s->y * A->yx + s->z * A->zx) * t->x + 
            (s->x * A->xy + s->y * A->yy + s->z * A->zy) * t->y +
            (s->x * A->xz + s->y * A->yz + s->z * A->zz) * t->z;
-    return;
 }
-__device__ void Cal933(Vec9 *A, Vec3 *s, Vec3 *t, double *ans) {                             //A(st)
-    *ans = A->xx * s->x * t->x + A->xy * s->x * t->y + A->xz * s->x * t->z + 
+__device__ double Cal933(Vec9 *A, Vec3 *s, Vec3 *t) {                                        //A(st)
+    return A->xx * s->x * t->x + A->xy * s->x * t->y + A->xz * s->x * t->z + 
            A->yx * s->y * t->x + A->yy * s->y * t->y + A->yz * s->y * t->z + 
            A->zx * s->z * t->x + A->zy * s->z * t->y + A->zz * s->z * t->z;
-    return;
 }
 
 struct Bond {                                                                                 //二点之间的作用，前向星式存储
