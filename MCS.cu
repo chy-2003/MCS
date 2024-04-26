@@ -89,16 +89,16 @@ int main() {
     CheckMesh(Mesh, superCell, 3, 3, 0);
     Mesh = DestroyRMesh_PSelf(Mesh, superCell);
 #endif
-/*
+
     double L = 30, R = 40;
     int Points = 11;
     double *ans = NULL;
     checkCuda(cudaMallocManaged(&ans, sizeof(double) * Points));
-    MonteCarlo_Range(ans, superCell, L, R, Points);
+    MonteCarlo_Range(ans, superCell, L, R, Points, 2000, 8000);
     for (int i = 0; i < Points; ++i) 
         fprintf(stdout, "%.2lf, %.2lf\n", (R - L) / (Points - 1) * i + L, ans[i]);
     checkCuda(cudaFree(ans));
-*/
+
     superCell = DestroySuperCell(superCell);
     fprintf(stderr, "[INFO] Program successfully ended.\n");
     return 0;

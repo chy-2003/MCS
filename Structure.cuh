@@ -11,10 +11,10 @@ struct Vec3 {                                                                   
     ~Vec3() {}
 };
 
-__global__ void Add(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x + b->x; ans->y = a->y + b->y; ans->z = a->z + b->z; return; }
-__global__ void Rev(Vec3 *a, Vec3 *ans) { ans->x = -a->x; ans->y = -a->y; ans->z = -a->z; return; }
-__global__ void Dec(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x - b->x; ans->y = a->y - b->y; ans->z = a->z - b->z; return; }
-__global__ void InMul(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x * b->x; ans->y = a->y * b->y; ans->z = a->z * b->z; return; }
+__device__ void Add(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x + b->x; ans->y = a->y + b->y; ans->z = a->z + b->z; return; }
+__device__ void Rev(Vec3 *a, Vec3 *ans) { ans->x = -a->x; ans->y = -a->y; ans->z = -a->z; return; }
+__device__ void Dec(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x - b->x; ans->y = a->y - b->y; ans->z = a->z - b->z; return; }
+__device__ void InMul(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x * b->x; ans->y = a->y * b->y; ans->z = a->z * b->z; return; }
 
 struct Vec9 {                                                                                //3*3矩阵
     double xx, xy, xz, yx, yy, yz, zx, zy, zz;
@@ -29,41 +29,53 @@ struct Vec9 {                                                                   
     ~Vec9() {}
 };
 
-__global__ void Add(Vec9 *a, Vec9 *b, Vec9 *ans) { 
+__device__ void Add(Vec9 *a, Vec9 *b, Vec9 *ans) { 
     ans->xx = a->xx + b->xx; ans->xy = a->xy + b->xy; ans->xz = a->xz + b->xz; 
     ans->yx = a->yx + b->yx; ans->yy = a->yy + b->yy; ans->yz = a->yz + b->yz; 
     ans->zx = a->zx + b->zx; ans->zy = a->zy + b->zy; ans->zz = a->zz + b->zz;
     return;
 }
-__global__ void Rev(Vec9 *a, Vec9 *ans) { 
+__device__ void Rev(Vec9 *a, Vec9 *ans) { 
     ans->xx = -a->xx; ans->xy = -a->xy; ans->xz = -a->xz;
     ans->yx = -a->yx; ans->yy = -a->yy; ans->yz = -a->yz;
     ans->zx = -a->zx; ans->zy = -a->zy; ans->zz = -a->zz;
     return;
 }
-__global__ void Del(Vec9 *a, Vec9 *b, Vec9 *ans) { 
+__device__ void Del(Vec9 *a, Vec9 *b, Vec9 *ans) { 
     ans->xx = a->xx - b->xx; ans->xy = a->xy - b->xy; ans->xz = a->xz - b->xz; 
     ans->yx = a->yx - b->yx; ans->yy = a->yy - b->yy; ans->yz = a->yz - b->yz; 
     ans->zx = a->zx - b->zx; ans->zy = a->zy - b->zy; ans->zz = a->zz - b->zz;
     return; 
 }
-__global__ void MaMul(Vec9 *a, Vec9 *b, Vec9 *ans) {                                         //3*3矩阵乘法
+__device__ void MaMul(Vec9 *a, Vec9 *b, Vec9 *ans) {                                         //3*3矩阵乘法
     ans->xx = a->xx * b->xx + a->xy * b->yx + a->xz * b->zx; ans->xy = a->xx * b->xy + a->xy * b->yy + a->xz * b->zy; ans->xz = a->xx * b->xz + a->xy * b->yz + a->xz * b->zz; 
     ans->yx = a->yx * b->xx + a->yy * b->yx + a->yz * b->zx; ans->yy = a->yx * b->xy + a->yy * b->yy + a->yz * b->zy; ans->yz = a->yx * b->xz + a->yy * b->yz + a->yz * b->zz; 
     ans->zx = a->zx * b->xx + a->zy * b->yx + a->zz * b->zx, ans->zy = a->zx * b->xy + a->zy * b->yy + a->zz * b->zy; ans->zz = a->zx * b->xz + a->zy * b->yz + a->zz * b->zz;
     return;
 }
-__global__ void CoMul(Vec3 *a, Vec3 *b, Vec9 *ans) {                                         //笛卡尔积
+__device__ void CoMul(Vec3 *a, Vec3 *b, Vec9 *ans) {                                         //笛卡尔积
     ans->xx = a->x * b->x; ans->xy = a->x * b->y; ans->xz = a->x * b->z;
     ans->yx = a->y * b->x; ans->yy = a->y * b->y; ans->yz = a->y * b->z;
     ans->zx = a->z * b->x; ans->zy = a->z * b->y; ans->zz = a->z * b->z;
+    return;
+}
+__device__ void Cal393(Vec3 *s, Vec9 *A, Vec3 *t, double *ans) {                             //s^T \cdot A \cdot t
+    *ans = (s->x * A->xx + s->y * A->yx + s->z * A->zx) * t->x + 
+           (s->x * A->xy + s->y * A->yy + s->z * A->zy) * t->y +
+           (s->x * A->xz + s->y * A->yz + s->z * A->zz) * t->z;
+    return;
+}
+__device__ void Cal933(Vec9 *A, Vec3 *s, Vec3 *t, double *ans) {                             //A(st)
+    *ans = A->xx * s->x * t->x + A->xy * s->x * t->y + A->xz * s->x * t->z + 
+           A->yx * s->y * t->x + A->yy * s->y * t->y + A->yz * s->y * t->z + 
+           A->zx * s->z * t->x + A->zy * s->z * t->y + A->zz * s->z * t->z;
     return;
 }
 
 struct Bond {                                                                                 //二点之间的作用，前向星式存储
     int Gx, Gy, Gz, t;                                                                        //跨原胞位移， 指向原子原胞内编号
     Bond* Next;                                                                               //前向星
-    Vec9* A;                                                                                  //s*A*t 关系，s为bond链首
+    Vec9* A;                                                                                  //A(st) 关系，s为bond链首
     Bond() : Gx(0), Gy(0), Gz(0), t(0), A() {}
     ~Bond() {}                                                                                //【重要】 务必保证 DestroyBond 在析构函数之前被调用
 };
@@ -78,7 +90,7 @@ struct Dot {                                                                    
     Bond *bonds;                                                                              //前向星起始位置
     Vec3 *Pos;                                                                                //原胞内分数坐标
     Vec3 *a;                                                                                  //S或P等三个方向
-    Vec9 *A;                                                                                  //a*A*a 各向异性
+    Vec9 *A;                                                                                  //A(aa) 各向异性
     Dot() : Pos(NULL), a(NULL), A(NULL), bonds(NULL) {}
     ~Dot() {}                                                                                 //【重要】  务必保证 DestroyDot 在析构函数前被调用
 };
