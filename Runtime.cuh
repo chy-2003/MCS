@@ -5,62 +5,22 @@
 #include "CudaInfo.cuh"
 #include "Structure.cuh"
 
-struct rUnit {                                                                               //运行时原胞，仅保留点上矢量信息，Dots为数组，对应UnitCell中数组
+
+int MaxThreads = omp_get_max_threads();
+
+struct rDots {                                                                               //4维数组,a,b,c,N
     Vec3 *Dots;
-    rUnit() : Dots(NULL) {}
-    ~rUnit() {}
+    rDots() : Dots(NULL) {}
+    ~rDots() {}
 };
 
-struct rMesh {                                                                               //运行时网格
-    rUnit *Unit;                                                                             //Unit是三维数组, 三个维度下标都为 0~N-1
-    rMesh() : Unit(NULL) {}
-    ~rMesh() {}
-};
-void DestroyRMesh(rMesh *self, SuperCell *superCell) {
-    int N = superCell->a * superCell->b * superCell->c;
-    int MaxThreads = omp_get_max_threads();
-    #pragma omp parallel for num_threads(MaxThreads)
-    for (int i = 0; i < N; ++i) 
-        checkCuda(cudaFree((self->Unit + i)->Dots));
-    checkCuda(cudaFree(self->Unit));
+void InitRDots(rDots *Tar, SuperCell *superCell) {
     return;
 }
-
-rMesh* DestroyRMesh_PSelf(rMesh *self, SuperCell *superCell) {
-    DestroyRMesh(self, superCell);
-    checkCuda(cudaFree(self));
-    return NULL;
-}
-
-__global__ void BuildUnit(rMesh *self, UnitCell *unitCell, int Size) {                       //建立网格内单个元胞
-    int N = blockIdx.x * blockDim.x + threadIdx.x;
-    if (N >= Size) return;
-    rUnit *target = self->Unit + N;
-    for (int i = 0; i < unitCell->N; ++i)
-        (target->Dots)[i] = (unitCell->Dots)[i].a;
+void DestroyDots(rDots *Tar) {                                                               //这里销毁了自身！
+    free(Tar->Dots);
+    free(Tar);
     return;
-}
-
-void BuildRMesh(rMesh *self, SuperCell *superCell) {                                         //建立网格
-    int N = superCell->a * superCell->b * superCell->c;
-    checkCuda(cudaMallocManaged(&(self->Unit), sizeof(rUnit) * N));                          //定义网格内数组（Unit），数组内的单个元素为一个rUnit
-    int MaxThreads = omp_get_max_threads();
-    #pragma omp parallel for num_threads(MaxThreads)
-    for (int i = 0; i < N; ++i) 
-        checkCuda(cudaMallocManaged(&((self->Unit + i)->Dots), 
-            sizeof(Vec3) * ((superCell->unitCell).N)));                                       //为rUnit分配内存，即申明rUnit的Dots数组
-    size_t threadsPerBlock = 256;
-    size_t numberOfBlocks = (N + threadsPerBlock - 1) / threadsPerBlock;
-    BuildUnit<<<numberOfBlocks, threadsPerBlock>>>(self, &(superCell->unitCell), N);
-    cudaDeviceSynchronize();
-    return;
-}
-
-
-rMesh* BuildRMesh_PSelf(rMesh *self, SuperCell *superCell) {                                 //建立网格
-    checkCuda(cudaMallocManaged(&self, sizeof(rMesh)));                                      //定义网格
-    BuildRMesh(self, superCell);
-    return self;
 }
 
 #endif

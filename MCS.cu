@@ -5,8 +5,8 @@
 #include <omp.h>
 #include "CudaInfo.cuh"
 #include "Structure.cuh"
-#include "Runtime.cuh"
-#include "MonteCarlo.cuh"
+//#include "Runtime.cuh"
+//#include "MonteCarlo.cuh"
 
 
 //compile args : nvcc MCS.cu -o MCS -Xcompiler -openmp -Xptxas -O3
@@ -88,12 +88,8 @@ int main() {
     fflush(stdout);
 */
 
-
-
-    SuperCell *superCell = NULL;
-    superCell = (SuperCell*) malloc(sizeof(SuperCell));
     FILE *structureInput = fopen("Input_Structure", "r");
-    superCell = InitStructure(superCell, structureInput);
+    SuperCell *superCell = InitStructure(superCell, structureInput);
     fclose(structureInput);
     if (superCell == NULL) {
         fprintf(stderr, "[ERROR] Failed loading structure. Exit.\n");

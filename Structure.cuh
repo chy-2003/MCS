@@ -142,10 +142,12 @@ struct SuperCell {
     SuperCell() : a(1), b(1), c(1), unitCell() {}
     ~SuperCell() {}                                                                           //【重要】  务必保证 DestroySuperCell 在析构函数前被调用
 };
-void InitSuperCell(SuperCell *self, int a, int b, int c) {
+SuperCell* InitSuperCell(int a, int b, int c) {
+    SuperCell *self = NULL;
+    self = (SuperCell*)malloc(sizeof(SuperCell));
     self->a = a; self->b = b; self->c = c;
     memset(&(self->unitCell), 0, sizeof(UnitCell));
-    return;
+    return self;
 };
 void DestroySuperCell(SuperCell *self) {                                                     //【重要】这里free了自己！
     DestroyUnitCell(&(self->unitCell)); 
@@ -153,7 +155,7 @@ void DestroySuperCell(SuperCell *self) {                                        
     return; 
 }
 
-SuperCell* InitStructure(SuperCell *self, FILE *file) {                                      //从文件读取结构信息以及相互关联信息，不包括蒙卡部分
+SuperCell* InitStructure(FILE *file) {                                      //从文件读取结构信息以及相互关联信息，不包括蒙卡部分
     fprintf(stderr, "[INFO] Start importing structure data.\n");
     int a, b, c;
     if (fscanf(file, "%d%d%d", &a, &b, &c) != 3) {
@@ -178,7 +180,7 @@ SuperCell* InitStructure(SuperCell *self, FILE *file) {                         
         fprintf(stderr, "[ERROR] Unable to get number of elements in unitcell.\n");
         return NULL;
     }
-    InitSuperCell(self, a, b, c);
+    SuperCell* self = InitSuperCell(a, b, c);
     InitUnitCell(&(self->unitCell), N, A, B, C);
     Vec9 D;
     for (int i = 0; i < N; ++i) {
