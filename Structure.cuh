@@ -4,6 +4,13 @@
 #include <cstdio>
 #include "CudaInfo.cuh"
 
+/*
+ * 这一部分提供了如下内容：
+ *     1：向量 Vec3 和 Vec9 以及响应计算
+ *     2：【重要】CPU内的数据存储
+ * 
+ */
+
 struct Vec3 {                                                                                //3元向量
     double x, y, z;
     Vec3() : x(0), y(0), z(0) {}
@@ -11,10 +18,11 @@ struct Vec3 {                                                                   
     ~Vec3() {}
 };
 
-__device__ void Add(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x + b->x; ans->y = a->y + b->y; ans->z = a->z + b->z; return; }
-__device__ void Rev(Vec3 *a, Vec3 *ans) { ans->x = -a->x; ans->y = -a->y; ans->z = -a->z; return; }
-__device__ void Dec(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x - b->x; ans->y = a->y - b->y; ans->z = a->z - b->z; return; }
-__device__ void InMul(Vec3 *a, Vec3 *b, Vec3 *ans) { ans->x = a->x * b->x; ans->y = a->y * b->y; ans->z = a->z * b->z; return; }
+__host__ __device__ Vec3 Add(const Vec3 &a, const Vec3 &b) { return Vec3(a.x + b.x, a.y + b.y, a.z + b.z); }
+__host__ __device__ Vec3 Rev(const Vec3 &a) { return Vec3(-a.x, -a.y, -a.z); }
+__host__ __device__ Vec3 Dec(const Vec3 &a, const Vec3 &b) { return Vec3(a.x - b.x, a.y - b.y, a.z - b.z); }
+__host__ __device__ Vec3 CoMul(const Vec3 &a, const Vec3 &b) { return Vec3(a.x * b.x, a.y * b.y, a.z * b.z); }
+__host__ __device__ double InMul(const Vec3 &a, const Vec3 &b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
 struct Vec9 {                                                                                //3*3矩阵
     double xx, xy, xz, yx, yy, yz, zx, zy, zz;
@@ -29,75 +37,61 @@ struct Vec9 {                                                                   
     ~Vec9() {}
 };
 
-__device__ void Add(Vec9 *a, Vec9 *b, Vec9 *ans) { 
-    ans->xx = a->xx + b->xx; ans->xy = a->xy + b->xy; ans->xz = a->xz + b->xz; 
-    ans->yx = a->yx + b->yx; ans->yy = a->yy + b->yy; ans->yz = a->yz + b->yz; 
-    ans->zx = a->zx + b->zx; ans->zy = a->zy + b->zy; ans->zz = a->zz + b->zz;
-    return;
+__host__ __device__ Vec9 Add(const Vec9 &a, const Vec9 &b) { 
+    return Vec9(a.xx + b.xx, a.xy + b.xy, a.xz + b.xz,  
+                a.yx + b.yx, a.yy + b.yy, a.yz + b.yz, 
+                a.zx + b.zx, a.zy + b.zy, a.zz + b.zz);
 }
-__device__ void Rev(Vec9 *a, Vec9 *ans) { 
-    ans->xx = -a->xx; ans->xy = -a->xy; ans->xz = -a->xz;
-    ans->yx = -a->yx; ans->yy = -a->yy; ans->yz = -a->yz;
-    ans->zx = -a->zx; ans->zy = -a->zy; ans->zz = -a->zz;
-    return;
+__host__ __device__ Vec9 Rev(const Vec9 &a) { 
+    return Vec9(-a.xx, -a.xy, -a.xz, -a.yx, -a.yy, -a.yz, -a.zx, -a.zy, -a.zz);
 }
-__device__ void Del(Vec9 *a, Vec9 *b, Vec9 *ans) { 
-    ans->xx = a->xx - b->xx; ans->xy = a->xy - b->xy; ans->xz = a->xz - b->xz; 
-    ans->yx = a->yx - b->yx; ans->yy = a->yy - b->yy; ans->yz = a->yz - b->yz; 
-    ans->zx = a->zx - b->zx; ans->zy = a->zy - b->zy; ans->zz = a->zz - b->zz;
-    return; 
+__host__ __device__ Vec9 Del(const Vec9 &a, const Vec9 &b) { 
+    return Vec9(a.xx - b.xx, a.xy - b.xy, a.xz - b.xz, 
+                a.yx - b.yx, a.yy - b.yy, a.yz - b.yz, 
+                a.zx - b.zx, a.zy - b.zy, a.zz - b.zz); 
 }
-__device__ void MaMul(Vec9 *a, Vec9 *b, Vec9 *ans) {                                         //3*3矩阵乘法
-    ans->xx = a->xx * b->xx + a->xy * b->yx + a->xz * b->zx; ans->xy = a->xx * b->xy + a->xy * b->yy + a->xz * b->zy; ans->xz = a->xx * b->xz + a->xy * b->yz + a->xz * b->zz; 
-    ans->yx = a->yx * b->xx + a->yy * b->yx + a->yz * b->zx; ans->yy = a->yx * b->xy + a->yy * b->yy + a->yz * b->zy; ans->yz = a->yx * b->xz + a->yy * b->yz + a->yz * b->zz; 
-    ans->zx = a->zx * b->xx + a->zy * b->yx + a->zz * b->zx, ans->zy = a->zx * b->xy + a->zy * b->yy + a->zz * b->zy; ans->zz = a->zx * b->xz + a->zy * b->yz + a->zz * b->zz;
-    return;
+__host__ __device__ Vec9 MaMul(const Vec9 &a, const Vec9 &b) {                                         //3*3矩阵乘法
+    return Vec9(a.xx * b.xx + a.xy * b.yx + a.xz * b.zx, a.xx * b.xy + a.xy * b.yy + a.xz * b.zy, a.xx * b.xz + a.xy * b.yz + a.xz * b.zz, 
+                a.yx * b.xx + a.yy * b.yx + a.yz * b.zx, a.yx * b.xy + a.yy * b.yy + a.yz * b.zy, a.yx * b.xz + a.yy * b.yz + a.yz * b.zz, 
+                a.zx * b.xx + a.zy * b.yx + a.zz * b.zx, a.zx * b.xy + a.zy * b.yy + a.zz * b.zy, a.zx * b.xz + a.zy * b.yz + a.zz * b.zz);
 }
-__device__ void CoMul(Vec3 *a, Vec3 *b, Vec9 *ans) {                                         //笛卡尔积
-    ans->xx = a->x * b->x; ans->xy = a->x * b->y; ans->xz = a->x * b->z;
-    ans->yx = a->y * b->x; ans->yy = a->y * b->y; ans->yz = a->y * b->z;
-    ans->zx = a->z * b->x; ans->zy = a->z * b->y; ans->zz = a->z * b->z;
-    return;
+__host__ __device__ Vec9 DeMul(const Vec3 &a, const Vec3 &b) {                                         //笛卡尔积
+    return Vec9(a.x * b.x, a.x * b.y, a.x * b.z, a.y * b.x, a.y * b.y, a.y * b.z, a.z * b.x, a.z * b.y, a.z * b.z);
 }
-__device__ double Cal393(Vec3 *s, Vec9 *A, Vec3 *t) {                                       //s^T \cdot A \cdot t
-    return (s->x * A->xx + s->y * A->yx + s->z * A->zx) * t->x + 
-           (s->x * A->xy + s->y * A->yy + s->z * A->zy) * t->y +
-           (s->x * A->xz + s->y * A->yz + s->z * A->zz) * t->z;
+__host__ __device__ double Cal393(const Vec3 &s, const Vec9 &A, const Vec3 &t) {                                       //s^T \cdot A \cdot t
+    return (s.x * A.xx + s.y * A.yx + s.z * A.zx) * t.x + 
+           (s.x * A.xy + s.y * A.yy + s.z * A.zy) * t.y +
+           (s.x * A.xz + s.y * A.yz + s.z * A.zz) * t.z;
 }
-__device__ double Cal933(Vec9 *A, Vec3 *s, Vec3 *t) {                                        //A(st)
-    return A->xx * s->x * t->x + A->xy * s->x * t->y + A->xz * s->x * t->z + 
-           A->yx * s->y * t->x + A->yy * s->y * t->y + A->yz * s->y * t->z + 
-           A->zx * s->z * t->x + A->zy * s->z * t->y + A->zz * s->z * t->z;
+__host__ __device__ double Cal933(const Vec9 &A, const Vec3 &s, const Vec3 &t) {                                        //A(st)
+    return A.xx * s.x * t.x + A.xy * s.x * t.y + A.xz * s.x * t.z + 
+           A.yx * s.y * t.x + A.yy * s.y * t.y + A.yz * s.y * t.z + 
+           A.zx * s.z * t.x + A.zy * s.z * t.y + A.zz * s.z * t.z;
 }
 
 struct Bond {                                                                                 //二点之间的作用，前向星式存储
     int Gx, Gy, Gz, t;                                                                        //跨原胞位移， 指向原子原胞内编号
     Bond* Next;                                                                               //前向星
-    Vec9* A;                                                                                  //A(st) 关系，s为bond链首
+    Vec9 A;                                                                                  //A(st) 关系，s为bond链首
     Bond() : Gx(0), Gy(0), Gz(0), t(0), A() {}
     ~Bond() {}                                                                                //【重要】 务必保证 DestroyBond 在析构函数之前被调用
 };
 void DestroyBond(Bond *self) {
     if (self->Next != NULL) DestroyBond(self->Next);                                          //这里保留了悬垂指针，因为马上会被销毁。所以请保证传入的是一个指向对象的正确指针
-    checkCuda(cudaFree(self->A));
-    checkCuda(cudaFree(self));
+    free(self);
     return;
 }
 
 struct Dot {                                                                                  //原胞内有意义的点，在UnitCell中以数组存在
     Bond *bonds;                                                                              //前向星起始位置
-    Vec3 *Pos;                                                                                //原胞内分数坐标
-    Vec3 *a;                                                                                  //S或P等三个方向
-    Vec9 *A;                                                                                  //A(aa) 各向异性
-    Dot() : Pos(NULL), a(NULL), A(NULL), bonds(NULL) {}
+    Vec3 Pos;                                                                                //原胞内分数坐标
+    Vec3 a;                                                                                  //S或P等三个方向
+    Vec9 A;                                                                                  //A(aa) 各向异性
+    Dot() : Pos(), a(), A(), bonds(NULL) {}
     ~Dot() {}                                                                                 //【重要】  务必保证 DestroyDot 在析构函数前被调用
 };
 void DestroyDot(Dot *self) {
-    if (self->bonds != NULL) DestroyBond(self->bonds);
-    if (self->Pos != NULL) checkCuda(cudaFree(self->Pos));
-    if (self->a != NULL) checkCuda(cudaFree(self->a));
-    if (self->A != NULL) checkCuda(cudaFree(self->A));                                        //这里保留了悬垂指针，所以调用 DestroyDot 之后不应再使用该 Dot 如 _AppendBond
-    //checkCuda(cudaFree(self));                                                              //保留 Dot 本身，在 DestroyUnitCell 时作为数组销毁
+    if (self->bonds != NULL) DestroyBond(self->bonds);                                        //这里保留了悬垂指针，所以调用 DestroyDot 之后不应再使用该 Dot 如 _AppendBond
     return;
 }
 void _AppendBond(Dot *target, Bond *val) {                                                    //加入bond，前向星操作
@@ -106,86 +100,57 @@ void _AppendBond(Dot *target, Bond *val) {                                      
     return;
 }
 
-struct UnitCell {                                                                             //原胞，其中Dots为数组而非单个指针
+struct UnitCell {                                                                             //原胞
     Vec3 a, b, c;                                                                             //原胞基失
     int N;                                                                                    //磁性原子/电偶极子数量
-    Dot* Dots;                                                                                //磁性原子/极化
+    Dot* Dots;                                                                                //磁性原子/极化 【array】
     UnitCell() : N(0), a(), b(), c(), Dots(NULL) {}
     ~UnitCell() {}                                                                            //【重要】  务必保证 DestroyUnitCell 在析构函数前被调用
 };
 void InitUnitCell(UnitCell *self, int N, Vec3 a, Vec3 b, Vec3 c) {
     self->N = N;
     self->a = a; self->b = b; self->c = c;
-    checkCuda(cudaMallocManaged(&(self->Dots), N * sizeof(Dot)));
-    for (int i = 0; i < N; ++i) {
-        (self->Dots)[i].bonds = NULL;
-        (self->Dots)[i].a = NULL;
-        (self->Dots)[i].A = NULL;
-    }
+    self->Dots = (Dot*) calloc(N, sizeof(Dot));
     return;
 }
 void SetDotPos(UnitCell *self, int s, Vec3 a) {                                              //设定点位置（分数坐标），传入参数为原胞指针、点编号、点位置
-    Vec3 *Temp = NULL;
-    checkCuda(cudaMallocManaged(&Temp, sizeof(Vec3)));
-    *Temp = a;
-    (self->Dots)[s].Pos = Temp;
-    return;
+    (self->Dots)[s].Pos = a; return;
 }
 void SetDotVal(UnitCell *self, int s, Vec3 a) {                                              //设定点上向量
-    Vec3 *Temp = NULL;
-    checkCuda(cudaMallocManaged(&Temp, sizeof(Vec3)));
-    *Temp = a;
-    (self->Dots)[s].a = Temp;
-    return;
+    (self->Dots)[s].a = a; return;
 }
 void SetDotAni(UnitCell *self, int s, Vec9 A) {                                              //设定点各向异性
-    Vec9 *Temp = NULL;
-    checkCuda(cudaMallocManaged(&Temp, sizeof(Vec9)));
-    *Temp = A;
-    (self->Dots)[s].A = Temp;
-    return;
+    (self->Dots)[s].A = A; return;
 }
 void AppendBond(UnitCell *self, int s, int t, int Gx, int Gy, int Gz, Vec9 A) {              //添加bond接口，传入原胞指针、起始点编号、终止点编号、跨晶格偏移和作用关系
     Bond *Temp = NULL;
-    checkCuda(cudaMallocManaged(&Temp, sizeof(Bond)));
-    Temp->Gx = Gx; Temp->Gy = Gy; Temp->Gz = Gz;
-    Temp->t = t;
-    checkCuda(cudaMallocManaged(&(Temp->A), sizeof(Vec9)));
-    *(Temp->A) = A;
+    Temp = (Bond*) malloc(sizeof(Bond));
+    Temp->A = A; Temp->Gx = Gx; Temp->Gy = Gy; Temp->Gz = Gz; Temp->t = t; Temp->Next = NULL;
     _AppendBond((self->Dots) + s, Temp);
     return;
 }
 void DestroyUnitCell(UnitCell *self) {
-    int N = self->N;
-    for (int i = 0; i < N; ++i)
-        DestroyDot((self->Dots) + i);
-    checkCuda(cudaFree(self->Dots));
-    checkCuda(cudaFree(self));
+    int N = self->N; 
+    for (int i = 0; i < N; ++i) DestroyDot((self->Dots) + i);
+    free(self->Dots);
     return;
 }
 
 struct SuperCell {
     int a, b, c;
-    UnitCell* unitCell;
-    SuperCell() : a(1), b(1), c(1), unitCell(NULL) {}
+    UnitCell unitCell;
+    SuperCell() : a(1), b(1), c(1), unitCell() {}
     ~SuperCell() {}                                                                           //【重要】  务必保证 DestroySuperCell 在析构函数前被调用
 };
-SuperCell* InitSuperCell(SuperCell *self, int a, int b, int c) {
-    checkCuda(cudaMallocManaged(&self, sizeof(SuperCell)));
+void InitSuperCell(SuperCell *self, int a, int b, int c) {
     self->a = a; self->b = b; self->c = c;
-    self->unitCell = NULL;
-    checkCuda(cudaMallocManaged(&(self->unitCell), sizeof(UnitCell)));
-    self->unitCell->a = Vec3();
-    self->unitCell->b = Vec3();
-    self->unitCell->c = Vec3();
-    self->unitCell->N = 0;
-    self->unitCell->Dots = NULL;
-    return self;
+    memset(&(self->unitCell), 0, sizeof(UnitCell));
+    return;
 };
-SuperCell* DestroySuperCell(SuperCell *self) {
-    DestroyUnitCell(self->unitCell);
-    checkCuda(cudaFree(self));
-    return NULL;
+void DestroySuperCell(SuperCell *self) {                                                     //【重要】这里free了自己！
+    DestroyUnitCell(&(self->unitCell)); 
+    free(self); 
+    return; 
 }
 
 SuperCell* InitStructure(SuperCell *self, FILE *file) {                                      //从文件读取结构信息以及相互关联信息，不包括蒙卡部分
@@ -213,8 +178,8 @@ SuperCell* InitStructure(SuperCell *self, FILE *file) {                         
         fprintf(stderr, "[ERROR] Unable to get number of elements in unitcell.\n");
         return NULL;
     }
-    self = InitSuperCell(self, a, b, c);
-    InitUnitCell(self->unitCell, N, A, B, C);
+    InitSuperCell(self, a, b, c);
+    InitUnitCell(&(self->unitCell), N, A, B, C);
     Vec9 D;
     for (int i = 0; i < N; ++i) {
         if (fscanf(file, "%lf%lf%lf", &(A.x), &(A.y), &(A.z)) != 3) {
@@ -222,19 +187,19 @@ SuperCell* InitStructure(SuperCell *self, FILE *file) {                         
             DestroySuperCell(self);
             return NULL;
         }
-        SetDotPos(self->unitCell, i, A);
+        SetDotPos(&(self->unitCell), i, A);
         if (fscanf(file, "%lf%lf%lf", &(A.x), &(A.y), &(A.z)) != 3) {
             fprintf(stderr, "[ERROR] Unable to get %dth val.\n", i);
             DestroySuperCell(self);
             return NULL;
         }
-        SetDotVal(self->unitCell, i, A);
+        SetDotVal(&(self->unitCell), i, A);
         if (fscanf(file, "%lf%lf%lf%lf%lf%lf%lf%lf%lf", &(D.xx), &(D.xy), &(D.xz), &(D.yx), &(D.yy), &(D.yz), &(D.zx), &(D.zy), &(D.zz)) != 9) {
             fprintf(stderr, "[ERROR] Unable to get %dth args.\n", i);
             DestroySuperCell(self);
             return NULL;
         }
-        SetDotAni(self->unitCell, i, D);
+        SetDotAni(&(self->unitCell), i, D);
     }
     if (fscanf(file, "%d", &N) != 1) {
         fprintf(stderr, "[ERROR] Unable to get number of bonds.\n");
@@ -248,7 +213,7 @@ SuperCell* InitStructure(SuperCell *self, FILE *file) {                         
             DestroySuperCell(self);
             return NULL;
         }
-        if (x < 0 || x >= self->unitCell->N || y < 0 || y >= self->unitCell->N) {
+        if (x < 0 || x >= (self->unitCell).N || y < 0 || y >= (self->unitCell).N) {
             fprintf(stderr, "[ERROR] Invalid index of bond %d.\n", i);
             DestroySuperCell(self);
             return NULL;
@@ -263,8 +228,8 @@ SuperCell* InitStructure(SuperCell *self, FILE *file) {                         
             DestroySuperCell(self);
             return NULL;
         }
-        AppendBond(self->unitCell, x, y, a, b, c, D);
-        AppendBond(self->unitCell, y, x, a, b, c, D);
+        AppendBond(&(self->unitCell), x, y, a, b, c, D);
+        AppendBond(&(self->unitCell), y, x, a, b, c, D);
     }
     fprintf(stderr, "[INFO] Structure data successfully imported.\n");
     return self;

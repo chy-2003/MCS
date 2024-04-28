@@ -13,19 +13,19 @@ __global__ void GetEnergy(double *ans, rMesh *mesh, SuperCell *superCell, double
     int X, Y, Z;
     int n = threadIdx.z;
     int id1 = x * (superCell->b * superCell->c) + y * (superCell->c) + z;
-    int Id = x * (superCell->b * superCell->c * superCell->unitCell->N) + 
-              y * (superCell->c * superCell->unitCell->N) + 
-              z * (superCell->unitCell->N) + 
+    int Id = x * (superCell->b * superCell->c * (superCell->unitCell).N) + 
+              y * (superCell->c * (superCell->unitCell).N) + 
+              z * ((superCell->unitCell).N) + 
               n;
     int id2;
-    ReductionTemp[Id] = Cal933(superCell->unitCell->Dots[n].A, (mesh->Unit)[id1].Dots + n, (mesh->Unit)[id1].Dots + n);
-    Bond *bond = superCell->unitCell->Dots->bonds;
+    ReductionTemp[Id] = Cal933((superCell->unitCell).Dots[n].A, (mesh->Unit)[id1].Dots[n], (mesh->Unit)[id1].Dots[n]);
+    Bond *bond = (superCell->unitCell).Dots[n].bonds;
     while (bond != NULL) {
         X = x + bond->Gx; if (X < 0) X += superCell->a; if (X >= superCell->a) X -= superCell->a;
         Y = y + bond->Gy; if (Y < 0) Y += superCell->b; if (Y >= superCell->b) Y -= superCell->b;
         Z = z + bond->Gz; if (Z < 0) Z += superCell->c; if (Z >= superCell->c) Z -= superCell->c;
         id2 = X * (superCell->b * superCell->c) + Y * (superCell->c) + Z;
-        ReductionTemp[Id] += Cal933(bond->A, (mesh->Unit)[id1].Dots + n, (mesh->Unit)[id2].Dots + (bond->t));
+        ReductionTemp[Id] += Cal933(bond->A, (mesh->Unit)[id1].Dots[n], (mesh->Unit)[id2].Dots[bond->t]);
         bond = bond->Next;
     }
     return;
@@ -90,11 +90,11 @@ void MonteCarlo_Range(double *ans, SuperCell *superCell, double L, double R, int
     double *Energy = NULL;
     double *ReductionTemp = NULL;
     double *RedSwap = NULL;
-    int N = superCell->a * superCell->b * superCell->c * superCell->unitCell->N;
+    int N = superCell->a * superCell->b * superCell->c * (superCell->unitCell).N;
     checkCuda(cudaMallocManaged(&Energy, sizeof(double) * Points));
     checkCuda(cudaMallocManaged(&ReductionTemp, sizeof(double) * N));
     checkCuda(cudaMallocManaged(&RedSwap, sizeof(double) * ((N + (CUBlockSize << 1) - 1) / (CUBlockSize << 1))));
-    dim3 threadsPerBlock(16, 16, superCell->unitCell->N);
+    dim3 threadsPerBlock(16, 16, (superCell->unitCell).N);
     dim3 numberOfBlocks((superCell->a + 15) / 16, (superCell->b + 15) / 16, superCell->c);
     GetEnergy<<<numberOfBlocks, threadsPerBlock>>>(Energy, RMesh, superCell, ReductionTemp);
     cudaDeviceSynchronize();

@@ -37,7 +37,7 @@ __global__ void BuildUnit(rMesh *self, UnitCell *unitCell, int Size) {          
     if (N >= Size) return;
     rUnit *target = self->Unit + N;
     for (int i = 0; i < unitCell->N; ++i)
-        (target->Dots)[i] = *((unitCell->Dots)[i].a);
+        (target->Dots)[i] = (unitCell->Dots)[i].a;
     return;
 }
 
@@ -48,10 +48,10 @@ void BuildRMesh(rMesh *self, SuperCell *superCell) {                            
     #pragma omp parallel for num_threads(MaxThreads)
     for (int i = 0; i < N; ++i) 
         checkCuda(cudaMallocManaged(&((self->Unit + i)->Dots), 
-            sizeof(Vec3) * (superCell->unitCell->N)));                                       //为rUnit分配内存，即申明rUnit的Dots数组
+            sizeof(Vec3) * ((superCell->unitCell).N)));                                       //为rUnit分配内存，即申明rUnit的Dots数组
     size_t threadsPerBlock = 256;
     size_t numberOfBlocks = (N + threadsPerBlock - 1) / threadsPerBlock;
-    BuildUnit<<<numberOfBlocks, threadsPerBlock>>>(self, superCell->unitCell, N);
+    BuildUnit<<<numberOfBlocks, threadsPerBlock>>>(self, &(superCell->unitCell), N);
     cudaDeviceSynchronize();
     return;
 }
