@@ -89,7 +89,7 @@ int main() {
 */
 
     FILE *structureInput = fopen("Input_Structure", "r");
-    SuperCell *superCell = InitStructure(superCell, structureInput);
+    SuperCell *superCell = InitStructure(structureInput);
     fclose(structureInput);
     if (superCell == NULL) {
         fprintf(stderr, "[ERROR] Failed loading structure. Exit.\n");
