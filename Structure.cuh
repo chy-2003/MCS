@@ -73,7 +73,8 @@ struct Bond {                                                                   
     int Gx, Gy, Gz, t;                                                                        //跨原胞位移， 指向原子原胞内编号
     Bond* Next;                                                                               //前向星
     Vec9 A;                                                                                  //A(st) 关系，s为bond链首
-    Bond() : Gx(0), Gy(0), Gz(0), t(0), A() {}
+    int Index;                                                                               //标号
+    Bond() : Gx(0), Gy(0), Gz(0), t(0), A(), Index(0) {}
     ~Bond() {}                                                                                //【重要】 务必保证 DestroyBond 在析构函数之前被调用
 };
 void DestroyBond(Bond *self) {
@@ -104,12 +105,14 @@ struct UnitCell {                                                               
     Vec3 a, b, c;                                                                             //原胞基失
     int N;                                                                                    //磁性原子/电偶极子数量
     Dot* Dots;                                                                                //磁性原子/极化 【array】
-    UnitCell() : N(0), a(), b(), c(), Dots(NULL) {}
+    int BondsCount;                                                                           //bond数量
+    UnitCell() : N(0), a(), b(), c(), Dots(NULL), BondsCount(0) {}
     ~UnitCell() {}                                                                            //【重要】  务必保证 DestroyUnitCell 在析构函数前被调用
 };
 void InitUnitCell(UnitCell *self, int N, Vec3 a, Vec3 b, Vec3 c) {
     self->N = N;
     self->a = a; self->b = b; self->c = c;
+    self->BondsCount = 0;
     self->Dots = (Dot*) calloc(N, sizeof(Dot));
     return;
 }
@@ -126,6 +129,7 @@ void AppendBond(UnitCell *self, int s, int t, int Gx, int Gy, int Gz, Vec9 A) { 
     Bond *Temp = NULL;
     Temp = (Bond*) malloc(sizeof(Bond));
     Temp->A = A; Temp->Gx = Gx; Temp->Gy = Gy; Temp->Gz = Gz; Temp->t = t; Temp->Next = NULL;
+    Temp->Index = ++(self->BondsCount);
     _AppendBond((self->Dots) + s, Temp);
     return;
 }

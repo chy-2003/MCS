@@ -3,33 +3,10 @@
 
 #include "Structure.cuh"
 #include "Runtime.cuh"
-#define CUBlockSize 256
-
-__global__ void GetEnergy(double *ans, rMesh *mesh, SuperCell *superCell, double *ReductionTemp) {
-    //unfinished
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
-    int z = blockIdx.z;
-    int X, Y, Z;
-    int n = threadIdx.z;
-    int id1 = x * (superCell->b * superCell->c) + y * (superCell->c) + z;
-    int Id = x * (superCell->b * superCell->c * (superCell->unitCell).N) + 
-              y * (superCell->c * (superCell->unitCell).N) + 
-              z * ((superCell->unitCell).N) + 
-              n;
-    int id2;
-    ReductionTemp[Id] = Cal933((superCell->unitCell).Dots[n].A, (mesh->Unit)[id1].Dots[n], (mesh->Unit)[id1].Dots[n]);
-    Bond *bond = (superCell->unitCell).Dots[n].bonds;
-    while (bond != NULL) {
-        X = x + bond->Gx; if (X < 0) X += superCell->a; if (X >= superCell->a) X -= superCell->a;
-        Y = y + bond->Gy; if (Y < 0) Y += superCell->b; if (Y >= superCell->b) Y -= superCell->b;
-        Z = z + bond->Gz; if (Z < 0) Z += superCell->c; if (Z >= superCell->c) Z -= superCell->c;
-        id2 = X * (superCell->b * superCell->c) + Y * (superCell->c) + Z;
-        ReductionTemp[Id] += Cal933(bond->A, (mesh->Unit)[id1].Dots[n], (mesh->Unit)[id2].Dots[bond->t]);
-        bond = bond->Next;
-    }
-    return;
-}
+#define CUBlockSize 256                                                                      //根据显卡型号调整BlockSize以优化性能，需要为96~1024间的32倍数。一般为128或256
+#define CUBlockX 16
+#define CUBlockY 16
+#define CUBlockZ 1 
 
 template <unsigned int blockSize>
 __device__ void warpReduce(volatile double *sdata, unsigned int tid) {
@@ -60,11 +37,19 @@ __global__ void Sum_ReductionMain(double *IData, double *OData, unsigned int n) 
     return;
 }
 
-double ReductionSum(double *Tar, int N, double *Tmp) {
+double ReductionSum(double *Tar, int N) {
+    printf("Start Sum. N = %d\n", N); fflush(stdout);
     size_t threadsPerBlock = CUBlockSize;
     size_t numberOfBlocks;
     double *Swp = NULL;
+    double *Tmp = NULL;
+    printf(".\n"); fflush(stdout);
+    checkCuda(cudaMallocManaged(&Tmp, sizeof(Tar)));
+    printf(".\n"); fflush(stdout);
+    checkCuda(cudaMemset(Tmp, 0, sizeof(Tmp)));
+    printf(".\n"); fflush(stdout);
     while (1) {
+        printf("N = %d\n", N); fflush(stdout);
         numberOfBlocks = (N + (CUBlockSize << 1) - 1) / (CUBlockSize << 1);
         Sum_ReductionMain<CUBlockSize><<<numberOfBlocks, threadsPerBlock, sizeof(double) * CUBlockSize>>>(Tar, Tmp, N);
         cudaDeviceSynchronize();
@@ -78,37 +63,75 @@ double ReductionSum(double *Tar, int N, double *Tmp) {
     }
     double Ans = 0;
     for (int i = 0; i < N; ++i) Ans += Tar[i];
+    checkCuda(cudaFree(Tmp));
     return Ans;
 }
 
-void MonteCarlo_Range(double *ans, SuperCell *superCell, double L, double R, int Points, int NSkip, int NCal) {
-    rMesh* RMesh;
-    checkCuda(cudaMallocManaged(&RMesh, sizeof(rMesh) * Points));
-    #pragma omp parallel for num_threads(Points)
-    for (int i = 0; i < Points; ++i) BuildRMesh(RMesh + i, superCell);
+__global__ void GetDotE(double *e, rMesh *mesh, SuperCell *superCell, int n) {
+    int N = blockIdx.x * blockDim.x + threadIdx.x;
+    if (N >= n) return;
+    int nDot = blockIdx.y;
+    int id = N * superCell->unitCell.N + nDot;
+    e[id] = Cal933((superCell->unitCell).Dots[nDot].A, (mesh->Dots)[id], (mesh->Dots)[id]) +
+            InMul(mesh->Field, (mesh->Dots)[id]);
+    return;
+}
+__global__ void GetBandE(double *e, rMesh *mesh, SuperCell *superCell, int n, int Shift) {
+    int N = blockIdx.x * blockDim.x + threadIdx.x;
+    if (N >= n) return;
+    int X = N / superCell->b / superCell->c;
+    int Y = (N - X * superCell->b * superCell->c) / superCell->c;
+    int Z = (N - X * superCell->b * superCell->c - Y * superCell->c);
+    int x, y, z;
+    int nDot = blockIdx.y;
+    Bond* bond = superCell->unitCell.Dots[nDot].bonds;
+    int id = N * superCell->unitCell.BondsCount;
+    while (bond != NULL) {
+        x = X + bond->Gx; if (x < 0) x += superCell->a; if (x >= superCell->a) x -= superCell->a;
+        y = Y + bond->Gy; if (y < 0) y += superCell->b; if (y >= superCell->b) y -= superCell->b;
+        z = Z + bond->Gz; if (z < 0) z += superCell->c; if (z >= superCell->c) z -= superCell->c;
+        e[id + bond->Index + Shift] = Cal393(mesh->Dots[N], bond->A, mesh->Dots[x * superCell->b * superCell->c + y * superCell->c + z]);
+        bond = bond->Next;
+    }
+    return;
+}
 
-    double *Energy = NULL;
-    double *ReductionTemp = NULL;
-    double *RedSwap = NULL;
-    int N = superCell->a * superCell->b * superCell->c * (superCell->unitCell).N;
-    checkCuda(cudaMallocManaged(&Energy, sizeof(double) * Points));
-    checkCuda(cudaMallocManaged(&ReductionTemp, sizeof(double) * N));
-    checkCuda(cudaMallocManaged(&RedSwap, sizeof(double) * ((N + (CUBlockSize << 1) - 1) / (CUBlockSize << 1))));
-    dim3 threadsPerBlock(16, 16, (superCell->unitCell).N);
-    dim3 numberOfBlocks((superCell->a + 15) / 16, (superCell->b + 15) / 16, superCell->c);
-    GetEnergy<<<numberOfBlocks, threadsPerBlock>>>(Energy, RMesh, superCell, ReductionTemp);
+void GetEnergy(rMesh *tar, SuperCell *str) {
+    SuperCell *gStructure = CopyStructureToGPU(str);
+    rMesh *gMesh = CopyRMeshToGPU(tar);
+    double *e = NULL;
+    int N = str->a * str->b * str->c;
+    int NDots = N * str->unitCell.N;
+    int NBonds = N * str->unitCell.BondsCount;
+    checkCuda(cudaMallocManaged(&e, sizeof(double) * (NDots + NBonds + (CUBlockSize << 1))));
+
+    size_t threadPerBlock = CUBlockSize;
+    dim3 numberOfBlocks((N + CUBlockSize - 1) / CUBlockSize, str->unitCell.N, 1);
+    GetDotE<<<numberOfBlocks, threadPerBlock>>>(e, gMesh, gStructure, N);
+    GetBandE<<<numberOfBlocks, threadPerBlock>>>(e, gMesh, gStructure, N, NDots);
     cudaDeviceSynchronize();
-    Energy[0] = ReductionSum(ReductionTemp, N, RedSwap);
-    #pragma omp parallel for num_threads(Points - 1)
-    for (int i = 1; i < Points; ++i) Energy[i] = ReductionTemp[0];
+    tar->Energy = ReductionSum(e, NDots + NBonds);
 
-    checkCuda(cudaFree(ReductionTemp));
-    checkCuda(cudaFree(RedSwap));
-    checkCuda(cudaFree(Energy));
+    DestroyRMeshOnGPU(gMesh);
+    DestroyStructureOnGPU(gStructure);
+    checkCuda(cudaFree(e));
+    return;
+}
 
-    #pragma omp parallel for num_threads(Points)
-    for (int i = 0; i < Points; ++i) DestroyRMesh(RMesh + i, superCell);
-    checkCuda(cudaFree(RMesh));
+void DoMonteCarlo(SuperCell *superCell, double *ans, double T, int NSkip, int NLoop, int NCall) {
+    rMesh **Mesh = NULL;                                                                     //长度为 NLoop 的 rMesh* 数组
+    Mesh = (rMesh**)malloc(sizeof(rMesh*) * NLoop);
+    for (int i = 0; i < NLoop; ++i) Mesh[i] = NULL;
+    Mesh[0] = InitRMesh(superCell, Vec3(), T);
+    printf("InitMesh End.\n"); fflush(stdout);
+    GetEnergy(Mesh[0], superCell);
+    printf("GetE = %.8lf\n", Mesh[0]->Energy);
+
+    #pragma omp parallel for num_threads(MaxThreads)
+    for (int i = 0; i < NLoop; ++i)  
+        if (Mesh[i] != NULL) { DestroyRMesh(Mesh[i]); Mesh[i] = NULL; }
+    free(Mesh);
+    return;
 }
 
 #endif
