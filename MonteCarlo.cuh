@@ -38,13 +38,13 @@ __global__ void Sum_ReductionMain(double *IData, double *OData, unsigned int n) 
 }
 
 double ReductionSum(double *Tar, int N) {
-    printf("Start Sum. N = %d\n", N); fflush(stdout);
+    printf("Start Sum. N = %d, %d\n", N, sizeof(Tar)); fflush(stdout);
     size_t threadsPerBlock = CUBlockSize;
     size_t numberOfBlocks;
     double *Swp = NULL;
     double *Tmp = NULL;
     printf(".\n"); fflush(stdout);
-    checkCuda(cudaMallocManaged(&Tmp, sizeof(Tar)));
+    checkCuda(cudaMallocManaged(&Tmp, sizeof(double) * (N + (CUBlockSize << 1))));
     printf(".\n"); fflush(stdout);
     checkCuda(cudaMemset(Tmp, 0, sizeof(Tmp)));
     printf(".\n"); fflush(stdout);
@@ -104,6 +104,7 @@ void GetEnergy(rMesh *tar, SuperCell *str) {
     int NDots = N * str->unitCell.N;
     int NBonds = N * str->unitCell.BondsCount;
     checkCuda(cudaMallocManaged(&e, sizeof(double) * (NDots + NBonds + (CUBlockSize << 1))));
+    printf("%d, %d, %d, %d\n", N, NDots, NBonds, sizeof(e));
 
     size_t threadPerBlock = CUBlockSize;
     dim3 numberOfBlocks((N + CUBlockSize - 1) / CUBlockSize, str->unitCell.N, 1);
