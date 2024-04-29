@@ -77,16 +77,12 @@ __global__ void GetBondE(double *e, rMesh *mesh, rBonds *bonds, UnitCell *unitCe
     e[Shift + N] = Cal393(mesh->Dots[bonds->bonds[N].S * unitCell->N + bonds->bonds[N].s], 
                     bonds->bonds[N].A,
                     mesh->Dots[bonds->bonds[N].T * unitCell->N + bonds->bonds[N].t]);
-    printf("%3d, s %2d %2d, t %2d %2d, %6.2lf\n", N, 
-            bonds->bonds[N].S, bonds->bonds[N].s, 
-            bonds->bonds[N].T, bonds->bonds[N].t, e[Shift + N]);
     return;
 }
 
-void GetEnergy(rMesh *tar, SuperCell *str) {
+void GetEnergy(rMesh *tar, SuperCell *str, rBonds *RBonds) {
     SuperCell *gStructure = CopyStructureToGPU(str);
     rMesh *gMesh = CopyRMeshToGPU(tar);
-    rBonds *RBonds = ExtractBonds(str);
     rBonds *gBonds = CopyRBondsToGPU(RBonds);
 
     double *e = NULL;
@@ -106,16 +102,10 @@ void GetEnergy(rMesh *tar, SuperCell *str) {
 
     tar->Energy = ReductionSum(e, NDots + NBonds);
     checkCuda(cudaFree(e));
-    printf("*\n"); fflush(stdout);
     
     DestroyRMeshOnGPU(gMesh);
-    printf("*\n"); fflush(stdout);
     DestroyStructureOnGPU(gStructure);
-    printf("*\n"); fflush(stdout);
-    DestroyRBonds(RBonds);
-    printf("*\n"); fflush(stdout);
     DestroyRBondsOnGPU(gBonds);
-    printf("*\n"); fflush(stdout);
     return;
 }
 
@@ -125,13 +115,17 @@ void DoMonteCarlo(SuperCell *superCell, double *ans, double T, int NSkip, int NL
     for (int i = 0; i < NLoop; ++i) Mesh[i] = NULL;
     Mesh[0] = InitRMesh(superCell, Vec3(), T);
     printf("InitMesh End.\n"); fflush(stdout);
-    GetEnergy(Mesh[0], superCell);
+    rBonds *RBonds = ExtractBonds(superCell);
+    printf("Unzip bonds End.\n"); fflush(stdout);
+
+    GetEnergy(Mesh[0], superCell, RBonds);
     printf("GetE = %.8lf\n", Mesh[0]->Energy);
 
     #pragma omp parallel for num_threads(MaxThreads)
     for (int i = 0; i < NLoop; ++i)  
         if (Mesh[i] != NULL) { DestroyRMesh(Mesh[i]); Mesh[i] = NULL; }
     free(Mesh);
+    DestroyRBonds(RBonds);
     return;
 }
 

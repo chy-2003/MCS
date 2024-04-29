@@ -103,11 +103,12 @@ rBonds* ExtractBonds(SuperCell *superCell) {
             self->bonds[id].T = (tx * superCell->b + ty) * superCell->c + tz;
             self->bonds[id].t = bond->t;
             int j = tx * superCell->b * superCell->c + ty * superCell->c + tz;
-            self->Index[i * self->IdC + (self->Index[i * self->IdC]++)] = id;
-            if (i != j) self->Index[j * self->IdC + (self->Index[j * self->IdC]++)] = id;
-            //printf("exBond %d : %d %d, %d %d\n", id, self->bonds[id].S, self->bonds[id].s, 
-            //        self->bonds[id].T, self->bonds[id].t);
-            //fflush(stdout);
+            self->Index[i * self->IdC] += 1;
+            self->Index[i * self->IdC + self->Index[i * self->IdC]] = id;
+            if (i != j) {
+                self->Index[j * self->IdC] += 1;
+                self->Index[j * self->IdC + self->Index[j * self->IdC]] = id;
+            }
         }
         bond = bond->Next;
         ++bondId;
@@ -130,8 +131,6 @@ rBonds* CopyRBondsToGPU(rBonds* self) {
     checkCuda(cudaMallocManaged(&(tar->Index), sizeof(  int) * (self->NIndex)));
     checkCuda(cudaMemcpy(tar->bonds, self->bonds, sizeof(rBond) * (self->NBonds), cudaMemcpyHostToDevice));
     checkCuda(cudaMemcpy(tar->Index, self->Index, sizeof(  int) * (self->NIndex), cudaMemcpyHostToDevice));
-    //printf("Check : %d %d, %d %d\n", tar->bonds[3].S, tar->bonds[3].s, tar->bonds[3].T, tar->bonds[3].t); fflush(stdout);
-    //printf("Check : %d %d, %d %d\n", self->bonds[3].S, self->bonds[3].s, self->bonds[3].T, self->bonds[3].t); fflush(stdout);
     return tar;
 }
 void DestroyRBondsOnGPU(rBonds *self) {
