@@ -13,7 +13,8 @@ struct rMesh {                                                                  
     Vec3 Field;                                                                             //外场
     double T;                                                                               //温度
     double Energy;
-    rMesh() : Dots(NULL) {}
+    int N, NDots;
+    rMesh() : Dots(NULL), Field(), T(0), Energy(0), N(0), NDots(0) {}
     ~rMesh() {}
 };
 
@@ -22,11 +23,12 @@ rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T) {
     self = (rMesh*)malloc(sizeof(rMesh));
     self->Field = Field; self->T = T;
     self->Energy = 0;
-    int N = superCell->a * superCell->b * superCell->c;
-    int n = (superCell->unitCell).N;
-    self->Dots = (Vec3*)calloc(N * n, sizeof(Vec3));
+    self->N = superCell->a * superCell->b * superCell->c;
+    int n = superCell->unitCell.N;
+    self->NDots = n * self->N;
+    self->Dots = (Vec3*)calloc(self->NDots, sizeof(Vec3));
     #pragma omp parallel for num_threads(MaxThreads)
-    for (int i = 0; i < N; ++i) {
+    for (int i = 0; i < self->N; ++i) {
         for (int j = 0; j < n; ++j)
             self->Dots[i * n + j] = (superCell->unitCell).Dots[j].a;
     }
@@ -39,8 +41,8 @@ SuperCell* CopyStructureToGPU(SuperCell *superCell) {                           
     checkCuda(cudaMallocManaged(&tar, sizeof(SuperCell)));
     tar->a = superCell->a; tar->b = superCell->b; tar->c = superCell->c; 
     tar->unitCell = superCell->unitCell; tar->unitCell.Dots = NULL;
-    checkCuda(cudaMallocManaged(&(tar->unitCell.Dots), sizeof(superCell->unitCell.Dots)));
-    checkCuda(cudaMemcpy(tar->unitCell.Dots, superCell->unitCell.Dots, sizeof(superCell->unitCell.Dots), cudaMemcpyHostToDevice));
+    checkCuda(cudaMallocManaged(&(tar->unitCell.Dots), sizeof(Dot) * superCell->unitCell.N));
+    checkCuda(cudaMemcpy(tar->unitCell.Dots, superCell->unitCell.Dots, sizeof(Dot) * superCell->unitCell.N, cudaMemcpyHostToDevice));
     return tar;
 }
 void DestroyStructureOnGPU(SuperCell *tar) { checkCuda(cudaFree(tar->unitCell.Dots)); checkCuda(cudaFree(tar)); return; }
@@ -49,10 +51,94 @@ rMesh* CopyRMeshToGPU(rMesh *RMesh) {
     checkCuda(cudaMallocManaged(&tar, sizeof(rMesh)));
     tar->Dots = NULL; 
     tar->Energy = RMesh->Energy; tar->Field = RMesh->Field; tar->T = RMesh->T;
-    checkCuda(cudaMallocManaged(&(tar->Dots), sizeof(RMesh->Dots)));
-    checkCuda(cudaMemcpy(tar->Dots, RMesh->Dots, sizeof(RMesh->Dots), cudaMemcpyHostToDevice));
+    tar->N = RMesh->N; tar->NDots = RMesh->NDots;
+    checkCuda(cudaMallocManaged(&(tar->Dots), sizeof(Vec3) * (RMesh->NDots)));
+    checkCuda(cudaMemcpy(tar->Dots, RMesh->Dots, sizeof(Vec3) * (RMesh->NDots), cudaMemcpyHostToDevice));
     return tar;
 }
 void DestroyRMeshOnGPU(rMesh *tar) { checkCuda(cudaFree(tar->Dots)); checkCuda(cudaFree(tar)); return; }
+
+struct rBond {
+    int S, T, s, t;
+    Vec9 A;
+    rBond() : S(0), T(0), s(0), t(0), A() {}
+    ~rBond() {}
+};
+struct rBonds {
+    rBond* bonds;
+    int *Index;
+    int NBonds;
+    int NIndex;
+    int IdC;
+    rBonds() : bonds(NULL), Index(NULL), NBonds(0), NIndex(0), IdC(0) {}
+    ~rBonds() {}
+};
+rBonds* ExtractBonds(SuperCell *superCell) {
+    rBonds *self = (rBonds*)malloc(sizeof(rBonds));
+    int NCells = superCell->a * superCell->b * superCell->c;
+    self->NBonds = NCells * superCell->unitCell.BondsCount;
+    self->bonds = (rBond*)malloc(sizeof(rBond) * self->NBonds);
+    self->IdC = superCell->unitCell.BondsCount * 2 + 1;
+    self->NIndex = NCells * self->IdC;
+    self->Index = (int*)malloc(sizeof(int) * (self->NIndex));
+    
+    #pragma omp parallel for num_threads(MaxThreads) 
+    for (int i = 0; i < NCells; ++i) self->Index[i * self->IdC] = 0;
+
+    Bond* bond = superCell->unitCell.bonds;
+    int bondId = 0;
+    while (bond != NULL) {
+        #pragma omp parallel for num_threads(MaxThreads)
+        for (int i = 0; i < NCells; ++i) {
+            int sx = i / (superCell->b * superCell->c);
+            int sy = (i - sx * (superCell->b * superCell->c)) / superCell->c;
+            int sz = (i - (sx * superCell->b + sy) * superCell->c);
+            int tx = sx + bond->Gx; if (tx < 0) tx += superCell->a; if (tx >= superCell->a) tx -= superCell->a;
+            int ty = sy + bond->Gy; if (ty < 0) ty += superCell->b; if (ty >= superCell->b) ty -= superCell->b;
+            int tz = sz + bond->Gz; if (tz < 0) tz += superCell->c; if (tz >= superCell->c) tz -= superCell->c;
+            int id = i * superCell->unitCell.BondsCount + bondId;
+            self->bonds[id].A = bond->A;
+            self->bonds[id].S = (sx * superCell->b + sy) * superCell->c + sz;
+            self->bonds[id].s = bond->s;
+            self->bonds[id].T = (tx * superCell->b + ty) * superCell->c + tz;
+            self->bonds[id].t = bond->t;
+            int j = tx * superCell->b * superCell->c + ty * superCell->c + tz;
+            self->Index[i * self->IdC + (self->Index[i * self->IdC]++)] = id;
+            if (i != j) self->Index[j * self->IdC + (self->Index[j * self->IdC]++)] = id;
+            //printf("exBond %d : %d %d, %d %d\n", id, self->bonds[id].S, self->bonds[id].s, 
+            //        self->bonds[id].T, self->bonds[id].t);
+            //fflush(stdout);
+        }
+        bond = bond->Next;
+        ++bondId;
+    }
+    return self;
+}
+void DestroyRBonds(rBonds* self) {
+    if (self->bonds != NULL) free(self->bonds);
+    if (self->Index != NULL) free(self->Index);
+    free(self);
+    return;
+}
+rBonds* CopyRBondsToGPU(rBonds* self) {
+    rBonds* tar = NULL;
+    checkCuda(cudaMallocManaged(&tar, sizeof(rBonds)));
+    tar->IdC = self->IdC;
+    tar->NBonds = self->NBonds;
+    tar->NIndex = self->NIndex;
+    checkCuda(cudaMallocManaged(&(tar->bonds), sizeof(rBond) * (self->NBonds)));
+    checkCuda(cudaMallocManaged(&(tar->Index), sizeof(  int) * (self->NIndex)));
+    checkCuda(cudaMemcpy(tar->bonds, self->bonds, sizeof(rBond) * (self->NBonds), cudaMemcpyHostToDevice));
+    checkCuda(cudaMemcpy(tar->Index, self->Index, sizeof(  int) * (self->NIndex), cudaMemcpyHostToDevice));
+    //printf("Check : %d %d, %d %d\n", tar->bonds[3].S, tar->bonds[3].s, tar->bonds[3].T, tar->bonds[3].t); fflush(stdout);
+    //printf("Check : %d %d, %d %d\n", self->bonds[3].S, self->bonds[3].s, self->bonds[3].T, self->bonds[3].t); fflush(stdout);
+    return tar;
+}
+void DestroyRBondsOnGPU(rBonds *self) {
+    if (self->bonds != NULL) checkCuda(cudaFree(self->bonds));
+    if (self->Index != NULL) checkCuda(cudaFree(self->Index));
+    checkCuda(cudaFree(self));
+    return;
+}
 
 #endif

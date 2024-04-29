@@ -71,28 +71,51 @@ __global__ void GetDotE(double *e, rMesh *mesh, SuperCell *superCell, int n) {
             InMul(mesh->Field, (mesh->Dots)[id]);
     return;
 }
+__global__ void GetBondE(double *e, rMesh *mesh, rBonds *bonds, UnitCell *unitCell, int n, int Shift) {
+    int N = blockIdx.x * blockDim.x + threadIdx.x;
+    if (N >= n) return;
+    e[Shift + N] = Cal393(mesh->Dots[bonds->bonds[N].S * unitCell->N + bonds->bonds[N].s], 
+                    bonds->bonds[N].A,
+                    mesh->Dots[bonds->bonds[N].T * unitCell->N + bonds->bonds[N].t]);
+    printf("%3d, s %2d %2d, t %2d %2d, %6.2lf\n", N, 
+            bonds->bonds[N].S, bonds->bonds[N].s, 
+            bonds->bonds[N].T, bonds->bonds[N].t, e[Shift + N]);
+    return;
+}
 
 void GetEnergy(rMesh *tar, SuperCell *str) {
     SuperCell *gStructure = CopyStructureToGPU(str);
     rMesh *gMesh = CopyRMeshToGPU(tar);
+    rBonds *RBonds = ExtractBonds(str);
+    rBonds *gBonds = CopyRBondsToGPU(RBonds);
+
     double *e = NULL;
     int N = str->a * str->b * str->c;
     int NDots = N * str->unitCell.N;
     int NBonds = N * str->unitCell.BondsCount;
     checkCuda(cudaMallocManaged(&e, sizeof(double) * (NDots + NBonds)));
-    printf("%d, %d, %d\n", N, NDots, NBonds); fflush(stdout);
 
     size_t threadPerBlock = CUBlockSize;
-    dim3 numberOfBlocks((N + CUBlockSize - 1) / CUBlockSize, str->unitCell.N, 1);
-    GetDotE <<<numberOfBlocks, threadPerBlock>>>(e, gMesh, gStructure, N);
+    dim3 numberOfBlocks1((N + CUBlockSize - 1) / CUBlockSize, str->unitCell.N, 1);
+    GetDotE<<<numberOfBlocks1, threadPerBlock>>>(e, gMesh, gStructure, N);
     cudaDeviceSynchronize();
-    //GetBandE<<<numberOfBlocks, threadPerBlock>>>(e, gMesh, gStructure, N, NDots);
-    //cudaDeviceSynchronize();
+
+    size_t numberOfBlocks2 = (gBonds->NBonds + CUBlockSize - 1) / CUBlockSize;
+    GetBondE<<<numberOfBlocks2, threadPerBlock>>>(e, gMesh, gBonds, &(gStructure->unitCell), gBonds->NBonds, NDots);
+    cudaDeviceSynchronize();
+
     tar->Energy = ReductionSum(e, NDots + NBonds);
     checkCuda(cudaFree(e));
-
+    printf("*\n"); fflush(stdout);
+    
     DestroyRMeshOnGPU(gMesh);
+    printf("*\n"); fflush(stdout);
     DestroyStructureOnGPU(gStructure);
+    printf("*\n"); fflush(stdout);
+    DestroyRBonds(RBonds);
+    printf("*\n"); fflush(stdout);
+    DestroyRBondsOnGPU(gBonds);
+    printf("*\n"); fflush(stdout);
     return;
 }
 
