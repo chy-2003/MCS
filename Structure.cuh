@@ -70,11 +70,10 @@ __host__ __device__ double Cal933(const Vec9 &A, const Vec3 &s, const Vec3 &t) {
 }
 
 struct Bond {                                                                                 //二点之间的作用，前向星式存储
-    int Gx, Gy, Gz, t;                                                                        //跨原胞位移， 指向原子原胞内编号
+    int Gx, Gy, Gz, s, t;                                                                        //跨原胞位移， 指向原子原胞内编号
     Bond* Next;                                                                               //前向星
     Vec9 A;                                                                                  //A(st) 关系，s为bond链首
-    int Index;                                                                               //标号
-    Bond() : Gx(0), Gy(0), Gz(0), t(0), A(), Index(0) {}
+    Bond() : Gx(0), Gy(0), Gz(0), s(0), t(0), A() {}
     ~Bond() {}                                                                                //【重要】 务必保证 DestroyBond 在析构函数之前被调用
 };
 void DestroyBond(Bond *self) {
@@ -84,29 +83,20 @@ void DestroyBond(Bond *self) {
 }
 
 struct Dot {                                                                                  //原胞内有意义的点，在UnitCell中以数组存在
-    Bond *bonds;                                                                              //前向星起始位置
     Vec3 Pos;                                                                                //原胞内分数坐标
     Vec3 a;                                                                                  //S或P等三个方向
     Vec9 A;                                                                                  //A(aa) 各向异性
-    Dot() : Pos(), a(), A(), bonds(NULL) {}
+    Dot() : Pos(), a(), A() {}
     ~Dot() {}                                                                                 //【重要】  务必保证 DestroyDot 在析构函数前被调用
 };
-void DestroyDot(Dot *self) {
-    if (self->bonds != NULL) DestroyBond(self->bonds);                                        //这里保留了悬垂指针，所以调用 DestroyDot 之后不应再使用该 Dot 如 _AppendBond
-    return;
-}
-void _AppendBond(Dot *target, Bond *val) {                                                    //加入bond，前向星操作
-    val->Next = target->bonds;
-    target->bonds = val;
-    return;
-}
 
 struct UnitCell {                                                                             //原胞
-    Vec3 a, b, c;                                                                             //原胞基失
     int N;                                                                                    //磁性原子/电偶极子数量
+    Vec3 a, b, c;                                                                             //原胞基失
     Dot* Dots;                                                                                //磁性原子/极化 【array】
     int BondsCount;                                                                           //bond数量
-    UnitCell() : N(0), a(), b(), c(), Dots(NULL), BondsCount(0) {}
+    Bond *bonds;                                                                              //前向星起始位置
+    UnitCell() : N(0), a(), b(), c(), Dots(NULL), BondsCount(0), bonds(NULL) {}
     ~UnitCell() {}                                                                            //【重要】  务必保证 DestroyUnitCell 在析构函数前被调用
 };
 void InitUnitCell(UnitCell *self, int N, Vec3 a, Vec3 b, Vec3 c) {
@@ -125,17 +115,23 @@ void SetDotVal(UnitCell *self, int s, Vec3 a) {                                 
 void SetDotAni(UnitCell *self, int s, Vec9 A) {                                              //设定点各向异性
     (self->Dots)[s].A = A; return;
 }
+void _AppendBond(UnitCell *target, Bond *val) {                                                    //加入bond，前向星操作
+    val->Next = target->bonds;
+    target->bonds = val;
+    return;
+}
 void AppendBond(UnitCell *self, int s, int t, int Gx, int Gy, int Gz, Vec9 A) {              //添加bond接口，传入原胞指针、起始点编号、终止点编号、跨晶格偏移和作用关系
     Bond *Temp = NULL;
     Temp = (Bond*) malloc(sizeof(Bond));
-    Temp->A = A; Temp->Gx = Gx; Temp->Gy = Gy; Temp->Gz = Gz; Temp->t = t; Temp->Next = NULL;
-    Temp->Index = ++(self->BondsCount);
-    _AppendBond((self->Dots) + s, Temp);
+    Temp->A = A; 
+    Temp->Gx = Gx; Temp->Gy = Gy; Temp->Gz = Gz; 
+    Temp->s = s; Temp->t = t; 
+    Temp->Next = NULL;
+    _AppendBond(self, Temp);
     return;
 }
 void DestroyUnitCell(UnitCell *self) {
-    int N = self->N; 
-    for (int i = 0; i < N; ++i) DestroyDot((self->Dots) + i);
+    if (self->bonds != NULL) DestroyBond(self->bonds);
     free(self->Dots);
     return;
 }
@@ -213,6 +209,7 @@ SuperCell* InitStructure(FILE *file) {                                      //�
         return NULL;
     }
     int x, y;
+    self->unitCell.BondsCount = N;
     for (int i = 0; i < N; ++i) {
         if (fscanf(file, "%d%d", &x, &y) != 2) {
             fprintf(stderr, "[ERROR] Missing Bond info s/t.\n");
@@ -235,7 +232,6 @@ SuperCell* InitStructure(FILE *file) {                                      //�
             return NULL;
         }
         AppendBond(&(self->unitCell), x, y, a, b, c, D);
-        AppendBond(&(self->unitCell), y, x, a, b, c, D);
     }
     fprintf(stderr, "[INFO] Structure data successfully imported.\n");
     return self;
