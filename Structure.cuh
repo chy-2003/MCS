@@ -156,7 +156,7 @@ void DestroySuperCell(SuperCell *self) {                                        
 }
 
 SuperCell* InitStructure(FILE *file) {                                      //从文件读取结构信息以及相互关联信息，不包括蒙卡部分
-    fprintf(stderr, "[INFO] Start importing structure data.\n");
+    fprintf(stderr, "[INFO][from Structure_InitStructure] Start importing structure data.\n");
     int a, b, c;
     if (fscanf(file, "%d%d%d", &a, &b, &c) != 3) {
         fprintf(stderr, "[ERROR] Unable to get supercell scale.\n");
@@ -233,7 +233,7 @@ SuperCell* InitStructure(FILE *file) {                                      //�
         }
         AppendBond(&(self->unitCell), x, y, a, b, c, D);
     }
-    fprintf(stderr, "[INFO] Structure data successfully imported.\n");
+    fprintf(stderr, "[INFO][from Structure_InitStructure] Structure data successfully imported.\n");
     return self;
 }
 

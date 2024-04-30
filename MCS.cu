@@ -35,6 +35,6 @@ int main() {
     DoMonteCarlo(superCell, &ans, 2, 8, 10, 10);
 
     DestroySuperCell(superCell); superCell = NULL;
-    fprintf(stderr, "[INFO] Program successfully ended.\n");
+    fprintf(stderr, "[INFO][from MCS_main] Program successfully ended.\n");
     return 0;
 }

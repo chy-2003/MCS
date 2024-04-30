@@ -1,6 +1,7 @@
 #ifndef __MCS_MONTECARLO__
 #define __MCS_MONTECARLO__
 
+#include <chrono>
 #include "Structure.cuh"
 #include "Runtime.cuh"
 #define CUBlockSize 256                                                                      //根据显卡型号调整BlockSize以优化性能，需要为96~1024间的32倍数。一般为128或256
@@ -80,10 +81,13 @@ __global__ void GetBondE(double *e, rMesh *mesh, rBonds *bonds, UnitCell *unitCe
     return;
 }
 
-void GetEnergy(rMesh *tar, SuperCell *str, rBonds *RBonds) {
+void GetEnergyGPU(rMesh *tar, SuperCell *str, rBonds *RBonds) {
     SuperCell *gStructure = CopyStructureToGPU(str);
     rMesh *gMesh = CopyRMeshToGPU(tar);
     rBonds *gBonds = CopyRBondsToGPU(RBonds);
+
+    std::chrono::steady_clock::time_point before = std::chrono::steady_clock::now();
+
 
     double *e = NULL;
     int N = str->a * str->b * str->c;
@@ -102,10 +106,39 @@ void GetEnergy(rMesh *tar, SuperCell *str, rBonds *RBonds) {
 
     tar->Energy = ReductionSum(e, NDots + NBonds);
     checkCuda(cudaFree(e));
+
+
+    std::chrono::steady_clock::time_point  after = std::chrono::steady_clock::now();
+    fprintf(stderr, "[DEBUG][from MonteCarlo_GetEnergyGPU] Kernel Time Cost(s) = %.8lf\n", std::chrono::duration<double>(after - before));
     
     DestroyRMeshOnGPU(gMesh);
     DestroyStructureOnGPU(gStructure);
     DestroyRBondsOnGPU(gBonds);
+    return;
+}
+
+void GetEnergyCPU(rMesh *tar, SuperCell *superCell, rBonds *RBonds) {
+    tar->Energy = 0;
+    //#pragma omp parallel for num_threads(MaxThreads)
+    for (int x = 0; x < superCell->a; ++x)
+        for (int y = 0; y < superCell->b; ++y) 
+            for (int z = 0; z < superCell->c; ++z) {
+                int id1 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N;
+                for (int n = 0; n < superCell->unitCell.N; ++n) {
+                    tar->Energy += Cal933(superCell->unitCell.Dots[n].A, tar->Dots[id1 + n], tar->Dots[id1 + n]);
+                    tar->Energy += InMul(tar->Field, tar->Dots[id1 + n]);
+                }
+                Bond* bond = superCell->unitCell.bonds;
+                int X, Y, Z, id2;
+                while (bond != NULL) {
+                    X = x + bond->Gx; if (X < 0) X += superCell->a; if (X >= superCell->a) X -= superCell->a;
+                    Y = y + bond->Gy; if (Y < 0) Y += superCell->b; if (Y >= superCell->b) Y -= superCell->b;
+                    Z = z + bond->Gz; if (Z < 0) Z += superCell->c; if (Z >= superCell->c) Z -= superCell->c;
+                    id2 = ((X * superCell->b + Y) * superCell->c + z) * superCell->unitCell.N;
+                    tar->Energy += Cal393(tar->Dots[id1 + bond->s], bond->A, tar->Dots[id2 + bond->t]);
+                    bond = bond->Next;
+                }
+            }
     return;
 }
 
@@ -114,12 +147,21 @@ void DoMonteCarlo(SuperCell *superCell, double *ans, double T, int NSkip, int NL
     Mesh = (rMesh**)malloc(sizeof(rMesh*) * NLoop);
     for (int i = 0; i < NLoop; ++i) Mesh[i] = NULL;
     Mesh[0] = InitRMesh(superCell, Vec3(), T);
-    printf("InitMesh End.\n"); fflush(stdout);
+    fprintf(stderr, "[DEBUG][from MonteCarlo_DoMonteCarlo] InitMesh End.\n"); fflush(stdout);
     rBonds *RBonds = ExtractBonds(superCell);
-    printf("Unzip bonds End.\n"); fflush(stdout);
+    fprintf(stderr, "[DEBUG][from MonteCarlo_DoMonteCarlo] Unzip bonds End.\n"); fflush(stdout);
 
-    GetEnergy(Mesh[0], superCell, RBonds);
-    printf("GetE = %.8lf\n", Mesh[0]->Energy);
+    std::chrono::steady_clock::time_point before = std::chrono::steady_clock::now();
+    GetEnergyGPU(Mesh[0], superCell, RBonds);
+    std::chrono::steady_clock::time_point  after = std::chrono::steady_clock::now();
+    fprintf(stderr, "[DEBUG][from MonteCarlo_DoMonteCarlo] GetEGPU = %.8lf, time(s) = %.8lf\n", Mesh[0]->Energy, 
+            std::chrono::duration<double>(after - before));
+
+    before = std::chrono::steady_clock::now();
+    GetEnergyCPU(Mesh[0], superCell, RBonds);
+    after = std::chrono::steady_clock::now();
+    fprintf(stderr, "[DEBUG][from MonteCarlo_DoMonteCarlo] GetECPU = %.8lf, time(s) = %.8lf\n", Mesh[0]->Energy, 
+            std::chrono::duration<double>(after - before));
 
     #pragma omp parallel for num_threads(MaxThreads)
     for (int i = 0; i < NLoop; ++i)  
