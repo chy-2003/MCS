@@ -21,12 +21,14 @@ struct rMesh {                                                                  
 rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T) {
     rMesh* self = NULL;
     self = (rMesh*)malloc(sizeof(rMesh));
-    self->Field = Field; self->T = T;
+    self->Field = Field; 
+    self->T = T;
     self->Energy = 0;
     self->N = superCell->a * superCell->b * superCell->c;
     int n = superCell->unitCell.N;
     self->NDots = n * self->N;
-    self->Dots = (Vec3*)calloc(self->NDots, sizeof(Vec3));
+    self->Dots = NULL;
+    self->Dots = (Vec3*)malloc(self->NDots * sizeof(Vec3));
     #pragma omp parallel for num_threads(MaxThreads)
     for (int i = 0; i < self->N; ++i) {
         for (int j = 0; j < n; ++j)
@@ -102,8 +104,9 @@ rBonds* ExtractBonds(SuperCell *superCell) {
             self->bonds[id].s = bond->s;
             self->bonds[id].T = (tx * superCell->b + ty) * superCell->c + tz;
             self->bonds[id].t = bond->t;
-            int j = tx * superCell->b * superCell->c + ty * superCell->c + tz;
+            int j = (tx * superCell->b + ty) * superCell->c + tz;
             self->Index[i * self->IdC] += 1;
+            //if (self->Index[i * self->IdC] >= self->IdC) printf("!!!\n");
             self->Index[i * self->IdC + self->Index[i * self->IdC]] = id;
             if (i != j) {
                 self->Index[j * self->IdC] += 1;

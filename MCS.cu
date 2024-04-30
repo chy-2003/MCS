@@ -31,8 +31,8 @@ int main() {
         assert(superCell == NULL);
     }
     
-    double ans;
-    DoMonteCarlo(superCell, &ans, 2, 8, 10, 10);
+    for (int i = 30; i <= 40; ++i)
+        printf("%d %.8lf\n", i, DoMonteCarlo_Basic_Chi(superCell, i, 8, 10));
 
     DestroySuperCell(superCell); superCell = NULL;
     fprintf(stderr, "[INFO][from MCS_main] Program successfully ended.\n");

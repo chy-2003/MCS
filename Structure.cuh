@@ -11,6 +11,9 @@
  * 
  */
 
+const double kB = 1.380649e-23;
+const double Pi = 3.14159265358979323846264;
+
 struct Vec3 {                                                                                //3元向量
     double x, y, z;
     Vec3() : x(0), y(0), z(0) {}
