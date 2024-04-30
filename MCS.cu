@@ -31,8 +31,13 @@ int main() {
         assert(superCell == NULL);
     }
     
-    for (int i = 30; i <= 40; ++i)
-        printf("%d %.8lf\n", i, DoMonteCarlo_Basic_Chi(superCell, i, 8, 10));
+    double L = 0.0, R = 100.0;
+    int Interval = 100;
+    for (int i = 0; i <= Interval; ++i) {
+        double T = (R - L) / Interval * i + L;
+        Vec3 Mag = DoMonteCarlo_Sin_Mag_Metropolis(superCell, T, 80000, 640000);
+        fprintf(stdout, "%7.2lf (%20.8lf, %20.8lf, %20.8lf), norm = %20.8lf\n", T, Mag.x, Mag.y, Mag.z, std::sqrt(InMul(Mag, Mag)));
+    }
 
     DestroySuperCell(superCell); superCell = NULL;
     fprintf(stderr, "[INFO][from MCS_main] Program successfully ended.\n");

@@ -13,8 +13,9 @@ struct rMesh {                                                                  
     Vec3 Field;                                                                             //外场
     double T;                                                                               //温度
     double Energy;
+    Vec3 Mag;
     int N, NDots;
-    rMesh() : Dots(NULL), Field(), T(0), Energy(0), N(0), NDots(0) {}
+    rMesh() : Dots(NULL), Field(), T(0), Energy(0), N(0), NDots(0), Mag() {}
     ~rMesh() {}
 };
 
@@ -34,6 +35,10 @@ rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T) {
         for (int j = 0; j < n; ++j)
             self->Dots[i * n + j] = (superCell->unitCell).Dots[j].a;
     }
+    self->Mag = Vec3(0, 0, 0);
+    for (int j = 0; j < n; ++j)
+        self->Mag = Add(self->Mag, (superCell->unitCell).Dots[j].a);
+    self->Mag.x /= n; self->Mag.y /= n; self->Mag.z /= n;
     return self;
 }
 void DestroyRMesh(rMesh *Tar) { free(Tar->Dots); free(Tar); return; }
@@ -106,7 +111,6 @@ rBonds* ExtractBonds(SuperCell *superCell) {
             self->bonds[id].t = bond->t;
             int j = (tx * superCell->b + ty) * superCell->c + tz;
             self->Index[i * self->IdC] += 1;
-            //if (self->Index[i * self->IdC] >= self->IdC) printf("!!!\n");
             self->Index[i * self->IdC + self->Index[i * self->IdC]] = id;
             if (i != j) {
                 self->Index[j * self->IdC] += 1;

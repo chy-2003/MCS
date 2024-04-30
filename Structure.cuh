@@ -2,6 +2,7 @@
 #define __MCS_STRUCTURE__
 
 #include <cstdio>
+#include <cmath>
 #include "CudaInfo.cuh"
 
 /*
@@ -26,6 +27,7 @@ __host__ __device__ Vec3 Rev(const Vec3 &a) { return Vec3(-a.x, -a.y, -a.z); }
 __host__ __device__ Vec3 Dec(const Vec3 &a, const Vec3 &b) { return Vec3(a.x - b.x, a.y - b.y, a.z - b.z); }
 __host__ __device__ Vec3 CoMul(const Vec3 &a, const Vec3 &b) { return Vec3(a.x * b.x, a.y * b.y, a.z * b.z); }
 __host__ __device__ double InMul(const Vec3 &a, const Vec3 &b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+__host__ __device__ Vec3 Div(const Vec3 &a, const double &b) { return Vec3(a.x / b, a.y / b, a.z / b); }
 
 struct Vec9 {                                                                                //3*3矩阵
     double xx, xy, xz, yx, yy, yz, zx, zy, zz;
@@ -89,7 +91,8 @@ struct Dot {                                                                    
     Vec3 Pos;                                                                                //原胞内分数坐标
     Vec3 a;                                                                                  //S或P等三个方向
     Vec9 A;                                                                                  //A(aa) 各向异性
-    Dot() : Pos(), a(), A() {}
+    double Norm;
+    Dot() : Pos(), a(), A(), Norm(0) {}
     ~Dot() {}                                                                                 //【重要】  务必保证 DestroyDot 在析构函数前被调用
 };
 
@@ -113,7 +116,9 @@ void SetDotPos(UnitCell *self, int s, Vec3 a) {                                 
     (self->Dots)[s].Pos = a; return;
 }
 void SetDotVal(UnitCell *self, int s, Vec3 a) {                                              //设定点上向量
-    (self->Dots)[s].a = a; return;
+    (self->Dots)[s].a = a; 
+    self->Dots->Norm = std::sqrt(InMul(a, a));
+    return;
 }
 void SetDotAni(UnitCell *self, int s, Vec9 A) {                                              //设定点各向异性
     (self->Dots)[s].A = A; return;

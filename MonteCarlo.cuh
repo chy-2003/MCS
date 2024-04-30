@@ -120,7 +120,7 @@ void GetEnergyGPU(rMesh *tar, SuperCell *str, rBonds *RBonds) {
     return;
 }
 
-void GetEnergyCPU(rMesh *tar, SuperCell *superCell, rBonds *RBonds) {
+void GetEnergyCPU(rMesh *tar, SuperCell *superCell) {
     double Energy = 0;
     #pragma omp parallel for num_threads(MaxThreads) reduction(+: Energy)
     for (int x = 0; x < superCell->a; ++x)
@@ -146,16 +146,6 @@ void GetEnergyCPU(rMesh *tar, SuperCell *superCell, rBonds *RBonds) {
     return;
 }
 
-Vec3 GetMagCPU(rMesh *Mesh) {
-    Vec3 Ans(0, 0, 0);
-    for (int i = 0; i < Mesh->NDots; ++i)
-        Ans = Add(Ans, Mesh->Dots[i]);
-    Ans.x /= Mesh->NDots;
-    Ans.y /= Mesh->NDots;
-    Ans.z /= Mesh->NDots;
-    return Ans;
-}
-
 double GetDeltaE_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int n, int id1, Vec3 mag) {
     double Ans = 0;
     int id2;
@@ -167,89 +157,68 @@ double GetDeltaE_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int
             y = Y + bond->Gy; if (y < 0) y += superCell->b; if (y >= superCell->b) y -= superCell->b;
             z = Z + bond->Gz; if (z < 0) z += superCell->c; if (z >= superCell->c) z -= superCell->c;
             id2 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + bond->t;
-            Ans += Cal393(Mesh->Dots[id1], bond->A, Mesh->Dots[id2]);
+            Ans += Cal393(mag, bond->A, Mesh->Dots[id2]) - Cal393(Mesh->Dots[id1], bond->A, Mesh->Dots[id2]);
         }
         if (n == bond->t) {
             x = X - bond->Gx; if (x < 0) x += superCell->a; if (x >= superCell->a) x -= superCell->a;
             y = Y - bond->Gy; if (y < 0) y += superCell->b; if (y >= superCell->b) y -= superCell->b;
             z = Z - bond->Gz; if (z < 0) z += superCell->c; if (z >= superCell->c) z -= superCell->c;
-            id2 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + bond->t;
-            Ans += Cal393(Mesh->Dots[id2], bond->A, Mesh->Dots[id1]);
+            id2 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + bond->s;
+            Ans += Cal393(Mesh->Dots[id2], bond->A, mag) - Cal393(Mesh->Dots[id2], bond->A, Mesh->Dots[id1]);
         }
         bond = bond->Next;
     }
     return Ans;
 }
 
-double DoMonteCarlo_Basic_Chi(SuperCell *superCell, double T, int NSkip, int NCall) {
-/*
-    rMesh **Mesh = NULL;                                                                     //长度为 NLoop 的 rMesh* 数组
-    Mesh = (rMesh**)malloc(sizeof(rMesh*) * NLoop);
-    for (int i = 0; i < NLoop; ++i) Mesh[i] = NULL;
-    Mesh[0] = InitRMesh(superCell, Vec3(), T);
-*/
-    //printf("+\n"); fflush(stdout);
+Vec3 DoMonteCarlo_Sin_Mag_Metropolis(SuperCell *superCell, double T, int NSkip, int NCall) {
+    if (T < 1e-9) T = 1e-9;
     rMesh *Mesh = InitRMesh(superCell, Vec3(), T);
-    //printf("+\n"); fflush(stdout);
-    rBonds *RBonds = ExtractBonds(superCell);
-    //printf("+\n"); fflush(stdout);
-
-    //GetEnergyGPU(Mesh, superCell, RBonds);
-
-    GetEnergyCPU(Mesh, superCell, RBonds);
-    //printf("+\n"); fflush(stdout);
+    GetEnergyCPU(Mesh, superCell);
 
     Vec3 mag(0, 0, 0);
     std::random_device RandomDevice;
     std::mt19937 Mt19937(RandomDevice());
-    std::uniform_int_distribution<> UIDA(0, superCell->a);
-    std::uniform_int_distribution<> UIDB(0, superCell->b);
-    std::uniform_int_distribution<> UIDC(0, superCell->c);
-    std::uniform_int_distribution<> UIDN(0, superCell->unitCell.N);
+    std::uniform_int_distribution<> UIDA(0, superCell->a - 1);
+    std::uniform_int_distribution<> UIDB(0, superCell->b - 1);
+    std::uniform_int_distribution<> UIDC(0, superCell->c - 1);
+    std::uniform_int_distribution<> UIDN(0, superCell->unitCell.N - 1);
     std::uniform_real_distribution<> URD(0.0, 1.0);
-    double MagNorm2 = 0, SMag2 = 0, SMagNorm = 0, u, v, x, y, z, n;
+    double u, v;
+    int x, y, z, n;
     double us, uc, vs, vc, dE, RandV, RandC;
     int Agree, id;
+    Vec3 MagS(0, 0, 0);
 
     for (int i = 0; i < NSkip + NCall; ++i) {
-        //printf("i %d, %.8lf\n", i, Mesh->Energy); fflush(stdout);
         x = UIDA(Mt19937); y = UIDB(Mt19937); z = UIDC(Mt19937); n = UIDN(Mt19937);
         id = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + n;
         u = URD(Mt19937); v = URD(Mt19937); 
         u *= 2.0 * Pi; v = std::acos(2.0 * v - 1);
         us = std::sin(u); uc = std::cos(u); vs = std::sin(v); vc = std::cos(v);
-        mag.x = us * vs;
-        mag.y = uc * vs;
-        mag.z = vc;
+        mag.x = us * vs * (superCell->unitCell.Dots[n].Norm);
+        mag.y = uc * vs * (superCell->unitCell.Dots[n].Norm);
+        mag.z = vc * (superCell->unitCell.Dots[n].Norm);
+        //if (std::fabs(superCell->unitCell.Dots[n].Norm - std::sqrt(InMul(mag, mag))) > 1e-8) { printf("!!!\n"); fflush(stdout); }
         dE = GetDeltaE_CPU(Mesh, superCell, x, y, z, n, id, mag);
         Agree = 0;
-        if (dE < 0) Agree = 1;
+        if (dE <= 0) Agree = 1;
         else {
             RandC = std::exp(-dE / T);
             RandV = URD(Mt19937);
             if (RandV < RandC) Agree = 1;
         }
-        if (Agree) {
+        if (Agree == 1) {
             Mesh->Energy += dE;
+            Mesh->Mag = Add(Mesh->Mag, Div(Rev(Mesh->Dots[id]), Mesh->NDots));
+            Mesh->Mag = Add(Mesh->Mag, Div(mag, Mesh->NDots));
             Mesh->Dots[id] = mag;
         }
-        if (i >= NSkip) {
-            mag = GetMagCPU(Mesh); MagNorm2 = InMul(mag, mag);
-            SMag2 += MagNorm2, SMagNorm += std::sqrt(MagNorm2);
-        }
+        if (i >= NSkip) MagS = Add(MagS, Mesh->Mag);
     }
 
-/*
-    #pragma omp parallel for num_threads(MaxThreads)
-    for (int i = 0; i < NLoop; ++i)  
-        if (Mesh[i] != NULL) { DestroyRMesh(Mesh[i]); Mesh[i] = NULL; }
-*/
-    printf("*\n"); fflush(stdout);
     DestroyRMesh(Mesh); Mesh = NULL;
-    printf("*\n"); fflush(stdout);
-    DestroyRBonds(RBonds); RBonds = NULL;
-    printf("*\n"); fflush(stdout);
-    return (SMag2 - SMagNorm * SMagNorm) / T;
+    return Div(MagS, NCall);
 }
 
 #endif
