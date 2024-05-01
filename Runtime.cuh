@@ -1,3 +1,71 @@
+/*
+ *
+ * Information
+ * 
+ * const
+ *     MaxThreads                     最大并行线程数
+ *     CUBlockSize                    cuda每个block线程数量。根据显卡型号调整BlockSize以优化性能，需要为96~1024间的32倍数。一般为128或256
+ *     CUBlockX                       blockDim.x for 3D
+ *     CUBlockY                       blockDim.y for 3D
+ *     CUBlockz                       blockDim.z for 3D
+ * 
+ * 
+ * struct
+ *     rMesh                          运行时网格信息
+ *         double T;                      温度
+ *         double Energy;                 总能量
+ *         Vec3 Mag;                      总磁矩
+ *         int N;                         网格总数
+ *         int NDots;                     原子总数
+ *         Vec3 *Dots;                    数组，大小为NDots，保存运行时Dot信息
+ *     rBond                          解压缩后单条bond信息
+ *         int S;                         起始网格编号
+ *         int s;                         起始dot原胞内编号
+ *         int T;                         终止网格编号
+ *         int t;                         终止dot原胞内编号
+ *         Vec9 A;                        交换作用，以Kelvin为单位
+ *     rBonds                         解压缩后bond信息
+ *         rBond *bonds;                  数组，共网格数*原胞bond数个元素
+ *         int *Index;                    每个dot相连bond的下标
+ *         int NBonds;                    bonds数量
+ *         int NIndex;                    index最大数量
+ *         int IdC;                       每个dot最大使用index数量
+ * 
+ * 
+ * function
+ *     double ReductionSum(double *Tar, int N);                            【对外接口】使用显存规约求和。注意，虽然对于4M个int，kernel
+ *                                                                                    仅花费0.2ms，但内存到显存的拷贝花销巨大。在1G个
+ *                                                                                    int求和量级之前，一般不会比CPU更快。所以对于内存
+ *                                                                                    显存都不会很大的个人PC而言，不需要用到这个函数。
+ *     void GetEnergyCPU(rMesh *tar, SuperCell *superCell);                【对外接口】获得体系总能量，使用CPU
+ *     void GetEnergyGPU(rMesh *tar, SuperCell *str, rBonds *RBonds);      【对外接口】获得体系总能量，使用GPU。与求和相同，对于内存和
+ *                                                                                    显存都不是很大的个人PC而言，不需要使用这个函数。
+ *     double GetDeltaE_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int n, int id1, Vec3 S);
+ *                                                                         【对外接口】将位于X,Y,Z,n的dot值改为S的能量差值。
+ * 
+ * 【以下函数仅和CPU、内存有关】
+ *     rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T);                  初始化体系，包括计算总磁矩和总能量
+ *     rMesh* CopyRMesh(rMesh *RMesh);                                                深度复制一个网格
+ *     void DestroyRMesh(rMesh *Tar);                                                 释放一个rMesh
+ *     rBonds* ExtractBonds(SuperCell *superCell);                                    获得所有bond信息
+ *     void DestroyRBonds(rBonds* self);                                              释放bond信息
+ * 
+ * 【以下函数与GPU、显存有关】
+ *     SuperCell* CopyStructureToGPU(SuperCell *superCell);                           将一个SuperCell结构信息拷贝至显存
+ *     void DestroyStructureOnGPU(SuperCell *tar);                                    释放位于显存的SuperCell
+ *     rMesh* CopyRMeshToGPU(rMesh *RMesh);                                           将网格拷贝至显存
+ *     void DestroyRMeshOnGPU(rMesh *tar);                                            释放位于显存的网格
+ *     rBonds* CopyRBondsToGPU(rBonds* self);                                         将bond信息拷贝至显存
+ *     void DestroyRBondsOnGPU(rBonds *self);                                         释放位于显存的bond信息
+ *     template <unsigned int blockSize>                                              规约求和末端释放
+ *         __device__ void warpReduce(volatile double *sdata, unsigned int tid)
+ *     template <unsigned int blockSize>                                              规约求和本体
+ *         __global__ void Sum_ReductionMain(double *IData, double *OData, unsigned int n)
+ *     __global__ void GetDotE(double *e, rMesh *mesh, SuperCell *superCell, int n);  获得dot能量（不包含bond）
+ *     __global__ void GetBondE(double *e, rMesh *mesh, rBonds *bonds, UnitCell *unitCell, int n, int Shift);
+ *                                                                                    获得bond能量
+ */
+
 #ifndef __MCS__RUNTIME__
 #define __MCS__RUNTIME__
 
@@ -5,7 +73,7 @@
 #include "CudaInfo.cuh"
 #include "Structure.cuh"
 
-#define CUBlockSize 256                                                                      //根据显卡型号调整BlockSize以优化性能，需要为96~1024间的32倍数。一般为128或256
+#define CUBlockSize 256
 #define CUBlockX 16
 #define CUBlockY 16
 #define CUBlockZ 1 
@@ -77,7 +145,7 @@ rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T) {
 }
 void DestroyRMesh(rMesh *Tar) { free(Tar->Dots); free(Tar); return; }
 
-SuperCell* CopyStructureToGPU(SuperCell *superCell) {                                        //共享内存，但注意减少CPU访问以提高运算速度
+SuperCell* CopyStructureToGPU(SuperCell *superCell) {
     SuperCell *tar;
     checkCuda(cudaMallocManaged(&tar, sizeof(SuperCell)));
     tar->a = superCell->a; tar->b = superCell->b; tar->c = superCell->c; 
@@ -269,10 +337,6 @@ void GetEnergyGPU(rMesh *tar, SuperCell *str, rBonds *RBonds) {
     rMesh *gMesh = CopyRMeshToGPU(tar);
     rBonds *gBonds = CopyRBondsToGPU(RBonds);
 
-#ifdef __MCS_DEBUG__
-    std::chrono::steady_clock::time_point before = std::chrono::steady_clock::now();
-#endif
-
     double *e = NULL;
     int N = str->a * str->b * str->c;
     int NDots = N * str->unitCell.N;
@@ -289,17 +353,41 @@ void GetEnergyGPU(rMesh *tar, SuperCell *str, rBonds *RBonds) {
     cudaDeviceSynchronize();
 
     tar->Energy = ReductionSum(e, NDots + NBonds);
-    checkCuda(cudaFree(e));
-
-#ifdef __MCS_DEBUG__
-    std::chrono::steady_clock::time_point  after = std::chrono::steady_clock::now();
-    fprintf(stderr, "[DEBUG][from MonteCarlo_GetEnergyGPU] Kernel Time Cost(s) = %.8lf\n", std::chrono::duration<double>(after - before));
-#endif    
+    checkCuda(cudaFree(e));  
 
     DestroyRMeshOnGPU(gMesh);
     DestroyStructureOnGPU(gStructure);
     DestroyRBondsOnGPU(gBonds);
     return;
+}
+
+double GetDeltaE_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int n, Vec3 S) {
+    int id1 = ((X * superCell->b + Y) * superCell->c + Z) * superCell->unitCell.N + n;
+    int id2;
+    int x, y, z;
+    Bond* bond = superCell->unitCell.bonds;
+    double Ans = Cal393(              S, superCell->unitCell.Dots[n].A,               S) - 
+                 Cal393(Mesh->Dots[id1], superCell->unitCell.Dots[n].A, Mesh->Dots[id1]) + 
+                 InMul(Mesh->Field,               S) - 
+                 InMul(Mesh->Field, Mesh->Dots[id1]);
+    while (bond != NULL) {
+        if (n == bond->s) {
+            x = X + bond->Gx; if (x < 0) x += superCell->a; if (x >= superCell->a) x -= superCell->a;
+            y = Y + bond->Gy; if (y < 0) y += superCell->b; if (y >= superCell->b) y -= superCell->b;
+            z = Z + bond->Gz; if (z < 0) z += superCell->c; if (z >= superCell->c) z -= superCell->c;
+            id2 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + bond->t;
+            Ans += Cal393(S, bond->A, Mesh->Dots[id2]) - Cal393(Mesh->Dots[id1], bond->A, Mesh->Dots[id2]);
+        }
+        if (n == bond->t) {
+            x = X - bond->Gx; if (x < 0) x += superCell->a; if (x >= superCell->a) x -= superCell->a;
+            y = Y - bond->Gy; if (y < 0) y += superCell->b; if (y >= superCell->b) y -= superCell->b;
+            z = Z - bond->Gz; if (z < 0) z += superCell->c; if (z >= superCell->c) z -= superCell->c;
+            id2 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + bond->s;
+            Ans += Cal393(Mesh->Dots[id2], bond->A, S) - Cal393(Mesh->Dots[id2], bond->A, Mesh->Dots[id1]);
+        }
+        bond = bond->Next;
+    }
+    return Ans;
 }
 
 #endif

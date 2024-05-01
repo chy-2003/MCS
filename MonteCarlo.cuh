@@ -11,34 +11,6 @@
 #define ModelXY 2
 #define ModelHeisenberg 3
 
-double GetDeltaE_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int n, int id1, Vec3 S) {
-    int id2;
-    int x, y, z;
-    Bond* bond = superCell->unitCell.bonds;
-    double Ans = Cal393(              S, superCell->unitCell.Dots[n].A,               S) - 
-                 Cal393(Mesh->Dots[id1], superCell->unitCell.Dots[n].A, Mesh->Dots[id1]) + 
-                 InMul(Mesh->Field,               S) - 
-                 InMul(Mesh->Field, Mesh->Dots[id1]);
-    while (bond != NULL) {
-        if (n == bond->s) {
-            x = X + bond->Gx; if (x < 0) x += superCell->a; if (x >= superCell->a) x -= superCell->a;
-            y = Y + bond->Gy; if (y < 0) y += superCell->b; if (y >= superCell->b) y -= superCell->b;
-            z = Z + bond->Gz; if (z < 0) z += superCell->c; if (z >= superCell->c) z -= superCell->c;
-            id2 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + bond->t;
-            Ans += Cal393(S, bond->A, Mesh->Dots[id2]) - Cal393(Mesh->Dots[id1], bond->A, Mesh->Dots[id2]);
-        }
-        if (n == bond->t) {
-            x = X - bond->Gx; if (x < 0) x += superCell->a; if (x >= superCell->a) x -= superCell->a;
-            y = Y - bond->Gy; if (y < 0) y += superCell->b; if (y >= superCell->b) y -= superCell->b;
-            z = Z - bond->Gz; if (z < 0) z += superCell->c; if (z >= superCell->c) z -= superCell->c;
-            id2 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + bond->s;
-            Ans += Cal393(Mesh->Dots[id2], bond->A, S) - Cal393(Mesh->Dots[id2], bond->A, Mesh->Dots[id1]);
-        }
-        bond = bond->Next;
-    }
-    return Ans;
-}
-
 void MonteCarloMetropolisCPU(SuperCell *superCell, 
                 double TStart, double TDelta, int Steps, 
                 int NSkip, int NCall, int Model,
@@ -78,6 +50,16 @@ void MonteCarloMetropolisCPU(SuperCell *superCell,
         for (int i = 0; i < NSkip + NCall; ) {
             x = UIDA(Mt19937); y = UIDB(Mt19937); z = UIDC(Mt19937); n = UIDN(Mt19937);
             id = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + n;
+            if (Model == ModelIsing) {
+                S = Mesh[step]->Dots[id];
+                S.z = -S.z;
+            }
+            if (Model == ModelXY) {
+                u = URD(Mt19937);
+                S.x = std::sin(u) * superCell->unitCell.Dots[n].Norm;
+                S.y = std::cos(u) * superCell->unitCell.Dots[n].Norm;
+                S.z = 0;
+            }
             if (Model == ModelHeisenberg) {
                 u = URD(Mt19937); v = URD(Mt19937); 
                 u *= 2.0 * Pi; v = std::acos(2.0 * v - 1);
@@ -86,7 +68,7 @@ void MonteCarloMetropolisCPU(SuperCell *superCell,
                 S.y = uc * vs * (superCell->unitCell.Dots[n].Norm);
                 S.z = vc * (superCell->unitCell.Dots[n].Norm);
             }
-            dE = GetDeltaE_CPU(Mesh[step], superCell, x, y, z, n, id, S);
+            dE = GetDeltaE_CPU(Mesh[step], superCell, x, y, z, n, S);
             Agree = 0;
             if (dE <= 0) Agree = 1;
             else {

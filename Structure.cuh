@@ -1,16 +1,68 @@
+/*
+ * Information
+ *
+ * const
+ *     kB
+ *     Pi
+ *
+ *  
+ * struct
+ *     Vec3                                              三元向量
+ *         double x, y, z;
+ *     Vec9                                              三阶方阵
+ *         double xx, xy, xz, yx, yy, yz, zx, zy, zz;
+ *     Bond                                              dot之间的关系
+ *         int s, t;                                         bond相连的两个dot编号
+ *         int Gx, Gy, Gz;                                   s到t的跨原胞编号，overlat
+ *         Vec9 A;                                           交换作用值，以开尔文为单位 1meV = 11.604609K
+ *         Bond* Next;                                       前向星，指向下一个bond
+ *     Dot                                               原胞内单点信息
+ *         Vec3 Pos;                                         原胞内位置，分数坐标（目前没什么用）
+ *         Vec3 a;                                           向量值，表示极化或者磁矩
+ *         Vec9 A;                                           各项异性，以开尔文为单位
+ *         double Norm;                                      向量模长
+ *     UnitCell                                          原胞信息
+ *         int N;                                            磁性原子/偶极子个数
+ *         int NBonds;                                       交换关系对数
+ *         Vec3 a, b, c;                                     三个基失（目前没什么用）
+ *         Dot *dots;                                        长度为N的数组，保存dot信息
+ *         Bond *bonds;                                      指针，前向星，保存bond信息
+ *     SuperCell                                         超胞信息
+ *         int a, b, c;                                      沿三个基失扩胞的倍数
+ *         UnitCell unitCell;                                原胞
+ * 
+ * 
+ * function
+ *     __host__ __device__ Vec3 Add(const Vec3 &a, const Vec3 &b);                        加
+ *     __host__ __device__ Vec9 Add(const Vec9 &a, const Vec9 &b);                        加
+ *     __host__ __device__ Vec3 Rev(const Vec3 &a);                                       相反数
+ *     __host__ __device__ Vec9 Rev(const Vec9 &a);                                       相反数
+ *     __host__ __device__ Vec3 Dec(const Vec3 &a, const Vec3 &b);                        减
+ *     __host__ __device__ Vec9 Del(const Vec9 &a, const Vec9 &b);                        减
+ *     __host__ __device__ Vec3 CoMul(const Vec3 &a, const Vec3 &b);                      叉乘
+ *     __host__ __device__ double InMul(const Vec3 &a, const Vec3 &b);                    点乘
+ *     __host__ __device__ Vec3 Mul(const Vec3 &a, const double b);                       乘常数
+ *     __host__ __device__ Vec3 Div(const Vec3 &a, const double b);                       除常数
+ *     __host__ __device__ Vec9 MaMul(const Vec9 &a, const Vec9 &b);                      矩乘
+ *     __host__ __device__ Vec9 DeMul(const Vec3 &a, const Vec3 &b);                      笛卡尔直积
+ *     __host__ __device__ double Cal393(const Vec3 &s, const Vec9 &A, const Vec3 &t);    sAt
+ *     void InitUnitCell(UnitCell *self, int N, Vec3 a, Vec3 b, Vec3 c);                  初始化原胞，传入dot数量和基失
+ *     void AppendBond(UnitCell *self, int s, int t, int Gx, int Gy, int Gz, Vec9 A);     向原胞加入bond
+ *     void DestroyBond(Bond *self);                                                      链式销毁bond（前向星）
+ *     void DestroyUnitCell(UnitCell *self);                                              销毁原胞
+ *     SuperCell* InitSuperCell(int a, int b, int c);                                     初始化超胞，传入扩胞倍数
+ *     void DestroySuperCell(SuperCell *self);                                            销毁超胞
+ *     SuperCell* InitStructure(FILE *file);                                              读入结构信息，传入文件指针
+ * 
+ */
+
+
 #ifndef __MCS_STRUCTURE__
 #define __MCS_STRUCTURE__
 
 #include <cstdio>
 #include <cmath>
 #include "CudaInfo.cuh"
-
-/*
- * 这一部分提供了如下内容：
- *     1：向量 Vec3 和 Vec9 以及响应计算
- *     2：【重要】CPU内的数据存储
- * 
- */
 
 const double kB = 1.380649e-23;
 const double Pi = 3.14159265358979323846264;
