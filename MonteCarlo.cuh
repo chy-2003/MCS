@@ -82,8 +82,8 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo,
         Mesh[i] = InitRMesh(superCell, mcInfo.HStart, mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes), mcInfo.Model);
     fprintf(stderr, "[Info][from MonteCarlo_MonteCarloMetropolisCPU] Mesh build ok.\n");
 
-    int Cnt = 0;
-    int TotalCnt = TotalMesh * (mcInfo.NSkip + mcInfo.NCall);
+    double Cnt = 0;
+    double TotalCnt = 1.0 * TotalMesh * (mcInfo.NSkip + mcInfo.NCall);
 
     #pragma omp parallel for num_threads(MaxThreads)
     for (int step = 0; step < TotalMesh; ++step) {
@@ -139,10 +139,9 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo,
         }                    
         #pragma omp critical (ProgressCnt)
         {
-            Cnt += (mcInfo.NSkip + mcInfo.NCall) / ProgressCount;
+            Cnt += (mcInfo.NSkip + mcInfo.NCall) % ProgressCount;
             fprintf(stderr, "[Info][from MonteCarlo_MonteCarloMetropolisCPU] MC Progress %6.2lf%%.\n", 100.0 * Cnt / TotalCnt);
         }
-        //fprintf(stderr, "[INFO][from MonteCarlo_MonteCarloMetropolisCPU] mesh %04d finished.\n", step);
     }
 
     #pragma omp parallel for num_threads(MaxThreads)
