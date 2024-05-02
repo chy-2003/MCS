@@ -4,10 +4,17 @@
  * 
  * const
  *     MaxThreads                     最大并行线程数
- *     CUBlockSize                    cuda每个block线程数量。根据显卡型号调整BlockSize以优化性能，需要为96~1024间的32倍数。一般为128或256
- *     CUBlockX                       blockDim.x for 3D
- *     CUBlockY                       blockDim.y for 3D
- *     CUBlockz                       blockDim.z for 3D
+ *
+ *
+ * define
+ *     CUBlockSize 256                cuda每个block线程数量。根据显卡型号调整BlockSize以优化性能，需要为96~1024间的32倍数。一般为128或256
+ *     CUBlockX 16                    blockDim.x for 3D
+ *     CUBlockY 16                    blockDim.y for 3D
+ *     CUBlockz 1                     blockDim.z for 3D
+ * 
+ *     ModelIsing 1
+ *     ModelXY 2
+ *     ModelHeisenberg 3
  * 
  * 
  * struct
@@ -37,11 +44,14 @@
  *                                                                                    仅花费0.2ms，但内存到显存的拷贝花销巨大。在1G个
  *                                                                                    int求和量级之前，一般不会比CPU更快。所以对于内存
  *                                                                                    显存都不会很大的个人PC而言，不需要用到这个函数。
- *     void GetEnergyCPU(rMesh *tar, SuperCell *superCell);                【对外接口】获得体系总能量，使用CPU
+ *     void GetEnergyCPU(rMesh *tar, SuperCell *superCell);                【对外接口】获得体系总能量，使用多线程CPU。
+ *     void GetEnergyCPU_NoOMP(rMesh *tar, SuperCell *superCell);          【对外接口】获得体系总能量，使用单线程CPU。若外层已进行并发
+ *                                                                                    则使用这个
  *     void GetEnergyGPU(rMesh *tar, SuperCell *str, rBonds *RBonds);      【对外接口】获得体系总能量，使用GPU。与求和相同，对于内存和
  *                                                                                    显存都不是很大的个人PC而言，不需要使用这个函数。
  *     double GetDeltaE_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int n, int id1, Vec3 S);
  *                                                                         【对外接口】将位于X,Y,Z,n的dot值改为S的能量差值。
+ *     void GetVec3(double Norm, int Model, double u, double v);           【对外接口】根据参数获得向量
  * 
  * 【以下函数仅和CPU、内存有关】
  *     rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T);                  初始化体系，包括计算总磁矩和总能量
@@ -70,6 +80,7 @@
 #define __MCS__RUNTIME__
 
 #include <omp.h>
+#include <random>
 #include "CudaInfo.cuh"
 #include "Structure.cuh"
 
@@ -78,9 +89,28 @@
 #define CUBlockY 16
 #define CUBlockZ 1 
 
+#define ModelIsing 1
+#define ModelXY 2
+#define ModelHeisenberg 3
 
 
 int MaxThreads = omp_get_max_threads();
+
+Vec3 GetVec3(double Norm, int Model, double u, double v = 0) {
+    double us, uc, vs, vc;
+    switch (Model) {
+        case ModelIsing :
+            return Vec3(0, 0, (u < 0.5) ? Norm : -Norm);
+        case ModelXY :
+            return Vec3(std::sin(u) * Norm, std::cos(u) * Norm, 0);
+        case ModelHeisenberg :
+            u *= 2.0 * Pi; v = std::acos(2.0 * v - 1);
+            us = std::sin(u); uc = std::cos(u); vs = std::sin(v); vc = std::cos(v);
+            return Vec3(us * vs * Norm, uc * vs * Norm, vc * Norm);
+        default :
+            return Vec3(0, 0, 0);
+    }
+}
 
 struct rMesh {                                                                               //4维数组,a,b,c,N
     Vec3 *Dots;
@@ -119,7 +149,32 @@ void GetEnergyCPU(rMesh *tar, SuperCell *superCell) {
     return;
 }
 
-rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T) {
+void GetEnergyCPU_NoOMP(rMesh *tar, SuperCell *superCell) {
+    double Energy = 0;
+    for (int x = 0; x < superCell->a; ++x)
+        for (int y = 0; y < superCell->b; ++y) 
+            for (int z = 0; z < superCell->c; ++z) {
+                int id1 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N;
+                for (int n = 0; n < superCell->unitCell.N; ++n) {
+                    Energy += Cal393(tar->Dots[id1 + n], superCell->unitCell.Dots[n].A, tar->Dots[id1 + n]) +
+                              InMul(tar->Field, tar->Dots[id1 + n]);
+                }
+                Bond* bond = superCell->unitCell.bonds;
+                int X, Y, Z, id2;
+                while (bond != NULL) {
+                    X = x + bond->Gx; if (X < 0) X += superCell->a; if (X >= superCell->a) X -= superCell->a;
+                    Y = y + bond->Gy; if (Y < 0) Y += superCell->b; if (Y >= superCell->b) Y -= superCell->b;
+                    Z = z + bond->Gz; if (Z < 0) Z += superCell->c; if (Z >= superCell->c) Z -= superCell->c;
+                    id2 = ((X * superCell->b + Y) * superCell->c + z) * superCell->unitCell.N;
+                    Energy += Cal393(tar->Dots[id1 + bond->s], bond->A, tar->Dots[id2 + bond->t]);
+                    bond = bond->Next;
+                }
+            }
+    tar->Energy = Energy;
+    return;
+}
+
+rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T, int Model) {
     rMesh* self = NULL;
     self = (rMesh*)malloc(sizeof(rMesh));
     self->Field = Field; 
@@ -133,14 +188,22 @@ rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T) {
     self->Dots = (Vec3*)malloc(self->NDots * sizeof(Vec3));
     #pragma omp parallel for num_threads(MaxThreads)
     for (int i = 0; i < self->N; ++i) {
-        for (int j = 0; j < n; ++j)
-            self->Dots[i * n + j] = (superCell->unitCell).Dots[j].a;
+        std::random_device RandomDevice;
+        std::mt19937 Mt19937(RandomDevice());
+        std::uniform_real_distribution<> URD(0, 1);
+        for (int j = 0; j < n; ++j) {
+            self->Dots[i * n + j] = GetVec3(superCell->unitCell.Dots[n].Norm, Model, URD(Mt19937), URD(Mt19937));
+        }
     }
-    self->Mag = Vec3(0, 0, 0);
-    #pragma omp parallel for num_threads(MaxThreads)
-    for (int j = 0; j < n; ++j)
-        self->Mag = Add(self->Mag, Mul((superCell->unitCell).Dots[j].a, self->N));
-    GetEnergyCPU(self, superCell);
+    double x = 0, y = 0, z = 0;
+    #pragma omp parallel for num_threads(MaxThreads) reduction(+:x, y, z)
+    for (int j = 0; j < self->NDots; ++j) {
+        x += self->Dots[j].x;
+        y += self->Dots[j].y;
+        z += self->Dots[j].z;
+    }
+    self->Mag = Vec3(x, y, z);
+    GetEnergyCPU_NoOMP(self, superCell);
     return self;
 }
 void DestroyRMesh(rMesh *Tar) { free(Tar->Dots); free(Tar); return; }
