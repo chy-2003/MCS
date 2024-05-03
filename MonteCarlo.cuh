@@ -74,13 +74,13 @@ MCInfo InitMCInfo(FILE *file) {
 void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo,
                 void (*returnFunc)(int, double, Vec3, int)) {
 
-    fprintf(stderr, "[Info][from MonteCarlo_MonteCarloMetropolisCPU] starting MC...\n");
+    fprintf(stderr, "[INFO][from MonteCarlo_MonteCarloMetropolisCPU] starting MC...\n");
     int TotalMesh = mcInfo.TSteps * mcInfo.NTimes;
     rMesh **Mesh = (rMesh**)malloc(sizeof(rMesh*) * TotalMesh);
     #pragma omp parallel for num_threads(MaxThreads)
     for (int i = 0; i < TotalMesh; ++i)
         Mesh[i] = InitRMesh(superCell, mcInfo.HStart, mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes), mcInfo.Model);
-    fprintf(stderr, "[Info][from MonteCarlo_MonteCarloMetropolisCPU] Mesh build ok.\n");
+    fprintf(stderr, "[INFO][from MonteCarlo_MonteCarloMetropolisCPU] Mesh build ok.\n");
 
     double Cnt = 0;
     double TotalCnt = 1.0 * TotalMesh * (mcInfo.NSkip + mcInfo.NCall);
@@ -132,7 +132,7 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo,
                     #pragma omp critical (ProgressCnt)
                     {
                         Cnt += ProgressCount;
-                        fprintf(stderr, "[Info][from MonteCarlo_MonteCarloMetropolisCPU] MC Progress %6.2lf%%.\n", 100.0 * Cnt / TotalCnt);
+                        fprintf(stderr, "[INFO][from MonteCarlo_MonteCarloMetropolisCPU] MC Progress %6.2lf%%.\n", 100.0 * Cnt / TotalCnt);
                     }
                 }
             }
@@ -140,7 +140,7 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo,
         #pragma omp critical (ProgressCnt)
         {
             Cnt += (mcInfo.NSkip + mcInfo.NCall) % ProgressCount;
-            fprintf(stderr, "[Info][from MonteCarlo_MonteCarloMetropolisCPU] MC Progress %6.2lf%%.\n", 100.0 * Cnt / TotalCnt);
+            fprintf(stderr, "[INFO][from MonteCarlo_MonteCarloMetropolisCPU] MC Progress %6.2lf%%.\n", 100.0 * Cnt / TotalCnt);
         }
     }
 
@@ -150,7 +150,7 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo,
         Mesh[i] = NULL;
     }
     free(Mesh);
-    fprintf(stderr, "[Info][from MonteCarlo_MonteCarloMetropolisCPU] MC Completed.\n");
+    fprintf(stderr, "[INFO][from MonteCarlo_MonteCarloMetropolisCPU] MC Completed.\n");
     return;
 }
 

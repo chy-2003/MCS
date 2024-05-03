@@ -192,7 +192,7 @@ rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T, int Model) {
         std::mt19937 Mt19937(RandomDevice());
         std::uniform_real_distribution<> URD(0, 1);
         for (int j = 0; j < n; ++j) {
-            self->Dots[i * n + j] = GetVec3(superCell->unitCell.Dots[n].Norm, Model, URD(Mt19937), URD(Mt19937));
+            self->Dots[i * n + j] = GetVec3(superCell->unitCell.Dots[j].Norm, Model, URD(Mt19937), URD(Mt19937));
         }
     }
     double x = 0, y = 0, z = 0;

@@ -22,16 +22,21 @@
 
 
 
-double *SumE2, *SumE, *SMag, *SMag2;
+double *SumE2, *SumE, *SMag2, *SMagA;
+Vec3 *SMag;
+int NH, NS;
 MCInfo mcInfo;
 
 void calFunc(int Id, double Energy, Vec3 mag, int I) {
+    int N = 0;
+    if (mcInfo.HSteps > 0) N = I / mcInfo.HSteps % NH; 
     #pragma omp critical (GetAns)
     {
-        SMag[Id / mcInfo.NTimes] += std::sqrt(InMul(mag, mag));
-        SMag2[Id / mcInfo.NTimes] += InMul(mag, mag);
-        SumE2[Id / mcInfo.NTimes] += Energy * Energy;
-        SumE[Id / mcInfo.NTimes] += Energy;
+        SMag [Id / mcInfo.NTimes * NH + N]  = Add(SMag[Id / mcInfo.NTimes * NH + N], mag);
+        SMag2[Id / mcInfo.NTimes * NH + N] += InMul(mag, mag);
+        SMagA[Id / mcInfo.NTimes * NH + N] += std::sqrt(InMul(mag, mag));
+        SumE2[Id / mcInfo.NTimes * NH + N] += Energy * Energy;
+        SumE [Id / mcInfo.NTimes * NH + N] += Energy;
     }
     return;
 }
@@ -44,24 +49,48 @@ int main() {
     FILE *MCInput = fopen("Input_MC", "r");
     mcInfo = InitMCInfo(MCInput);
     fclose(MCInput);
+    if (mcInfo.HSteps <= 0) NH = 1;
+    else NH = 4 * mcInfo.HTimes;
+    if (mcInfo.NCall % NH != 0) mcInfo.NCall += NH - mcInfo.NCall % NH;
+    NS = mcInfo.NCall * mcInfo.NTimes / NH;
 
     int N = superCell->a * superCell->b * superCell->c * superCell->unitCell.N;
-    SMag  = (double*)calloc(mcInfo.TSteps, sizeof(double));
-    SMag2 = (double*)calloc(mcInfo.TSteps, sizeof(double));
-    SumE  = (double*)calloc(mcInfo.TSteps, sizeof(double));
-    SumE2 = (double*)calloc(mcInfo.TSteps, sizeof(double));
+    SMag  = (Vec3*)calloc(mcInfo.TSteps * NH, sizeof(Vec3));
+    SMag2 = (double*)calloc(mcInfo.TSteps * NH, sizeof(double));
+    SMagA = (double*)calloc(mcInfo.TSteps * NH, sizeof(double));
+    SumE  = (double*)calloc(mcInfo.TSteps * NH, sizeof(double));
+    SumE2 = (double*)calloc(mcInfo.TSteps * NH, sizeof(double));
 
     MonteCarloMetropolisCPU(superCell, mcInfo, calFunc);
-    for (int i = 0; i < mcInfo.TSteps; ++i) { 
-        SumE2[i] /= mcInfo.NCall * mcInfo.NTimes; SumE[i] /= mcInfo.NCall * mcInfo.NTimes; 
-        SMag2[i] /= mcInfo.NCall * mcInfo.NTimes; SMag[i] /= mcInfo.NCall * mcInfo.NTimes; 
+    for (int i = 0; i < mcInfo.TSteps * NH; ++i) { 
+        SumE [i] /= NS; 
+        SumE2[i] /= NS; 
+        SMag [i]  = Div(SMag[i], NS); 
+        SMag2[i] /= NS;
+        SMagA[i] /= NS;
     }
-    for (int i = 0; i < mcInfo.TSteps; ++i)
-        printf("T = %6.2lf, M = %12.8lf, Cv = %20.8lf, Chi = %20.8lf\n", 
-                mcInfo.TStart + i * mcInfo.TDelta, 
-                SMag[i] / N, 
-                (SumE2[i] - SumE[i] * SumE[i]) / (mcInfo.TStart + i * mcInfo.TDelta) / N, 
-                (SMag2[i] - SMag[i] * SMag[i]) / (mcInfo.TStart + i * mcInfo.TDelta) / N);
+    if (mcInfo.HSteps <= 0) {
+        printf("T, M, Cv, Chi, \n");
+        for (int i = 0; i < mcInfo.TSteps; ++i) {
+            printf("%6.2lf, %12.8lf, %20.8lf, %20.8lf\n", 
+                    mcInfo.TStart + i * mcInfo.TDelta, 
+                    SMagA[i] / N, 
+                    (SumE2[i] - SumE[i] * SumE[i]) / (mcInfo.TStart + i * mcInfo.TDelta) / N, 
+                    (SMag2[i] - SMagA[i] * SMagA[i]) / (mcInfo.TStart + i * mcInfo.TDelta) / N);
+        }
+    } else {
+        for (int i = 0; i < mcInfo.TSteps; ++i) {
+            printf("T = %6.2lf\n", mcInfo.TStart + i * mcInfo.TDelta);
+            printf("Hz, Bz, \n");
+            Vec3 H = mcInfo.HStart;
+            for (int j = 0; j < NH; ++j) {
+                int t = (j / mcInfo.HTimes);
+                if ((t & 3) == 0 || (t & 3) == 3) H = Add(H, mcInfo.HDelta);
+                else H = Add(H, Rev(mcInfo.HDelta));
+                printf("%20.8lf, %20.8lf\n", H.z, Div(SMag[i * NH + j], N).z);
+            }
+        }
+    }
 
     DestroySuperCell(superCell); superCell = NULL;
     free(SMag); free(SMag2); free(SumE); free(SumE2);
