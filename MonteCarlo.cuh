@@ -117,6 +117,9 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo,
                 Mesh[step]->Energy += dE;
                 Mesh[step]->Mag = Add(Mesh[step]->Mag, Rev(Mesh[step]->Dots[id]));
                 Mesh[step]->Mag = Add(Mesh[step]->Mag, S);
+                if (std::sqrt(InMul(Mesh[step]->Mag, Mesh[step]->Mag)) > 1.5 * Mesh[step]->NDots) { 
+                    printf("!!!\n"); fflush(stdout); 
+                }
                 Mesh[step]->Dots[id] = S;
                 if (i >= mcInfo.NSkip) returnFunc(step, Mesh[step]->Energy, Mesh[step]->Mag, i);
                 ++i;

@@ -29,7 +29,7 @@ MCInfo mcInfo;
 
 void calFunc(int Id, double Energy, Vec3 mag, int I) {
     int N = 0;
-    if (mcInfo.HSteps > 0) N = I / mcInfo.HSteps % NH; 
+    if (mcInfo.HSteps > 0) N = (I / mcInfo.HSteps) % NH; 
     #pragma omp critical (GetAns)
     {
         SMag [Id / mcInfo.NTimes * NH + N]  = Add(SMag[Id / mcInfo.NTimes * NH + N], mag);
@@ -51,11 +51,17 @@ int main() {
     fclose(MCInput);
     if (mcInfo.HSteps <= 0) NH = 1;
     else NH = 4 * mcInfo.HTimes;
-    if (mcInfo.NCall % NH != 0) mcInfo.NCall += NH - mcInfo.NCall % NH;
+    if (mcInfo.HSteps > 0) {
+        if (mcInfo.NCall % (NH * mcInfo.HSteps) != 0) 
+            mcInfo.NCall += (NH * mcInfo.HSteps) - mcInfo.NCall % (NH * mcInfo.HSteps);
+        if (mcInfo.NSkip % (NH * mcInfo.HSteps) != 0) 
+            mcInfo.NSkip += (NH * mcInfo.HSteps) - mcInfo.NSkip % (NH * mcInfo.HSteps);
+    }
     NS = mcInfo.NCall * mcInfo.NTimes / NH;
+    fprintf(stderr, "[INFO][from MCS_main] NSkip = %d, NCall = %d\n", mcInfo.NSkip, mcInfo.NCall);
 
     int N = superCell->a * superCell->b * superCell->c * superCell->unitCell.N;
-    SMag  = (Vec3*)calloc(mcInfo.TSteps * NH, sizeof(Vec3));
+    SMag  = (  Vec3*)calloc(mcInfo.TSteps * NH, sizeof(  Vec3));
     SMag2 = (double*)calloc(mcInfo.TSteps * NH, sizeof(double));
     SMagA = (double*)calloc(mcInfo.TSteps * NH, sizeof(double));
     SumE  = (double*)calloc(mcInfo.TSteps * NH, sizeof(double));
@@ -70,21 +76,22 @@ int main() {
         SMagA[i] /= NS;
     }
     if (mcInfo.HSteps <= 0) {
-        printf("T, M, Cv, Chi, \n");
+        printf("T, M, Cv, Chi, aM, \n");
         for (int i = 0; i < mcInfo.TSteps; ++i) {
-            printf("%6.2lf, %12.8lf, %20.8lf, %20.8lf\n", 
+            printf("%6.2lf, %12.8lf, %20.8lf, %20.8lf, %20.8lf\n", 
                     mcInfo.TStart + i * mcInfo.TDelta, 
                     SMagA[i] / N, 
                     (SumE2[i] - SumE[i] * SumE[i]) / (mcInfo.TStart + i * mcInfo.TDelta) / N, 
-                    (SMag2[i] - SMagA[i] * SMagA[i]) / (mcInfo.TStart + i * mcInfo.TDelta) / N);
+                    (SMag2[i] - SMagA[i] * SMagA[i]) / (mcInfo.TStart + i * mcInfo.TDelta) / N,
+                    SMag[i].z / N);
         }
     } else {
         for (int i = 0; i < mcInfo.TSteps; ++i) {
             printf("T = %6.2lf\n", mcInfo.TStart + i * mcInfo.TDelta);
-            printf("Hz, Bz, \n");
+            printf("Hz, Bz, M\n");
             Vec3 H = mcInfo.HStart;
             for (int j = 0; j < NH; ++j) {
-                printf("%20.8lf, %20.8lf\n", H.z, Div(SMag[i * NH + j], N).z);
+                printf("%20.8lf, %20.8lf, %20.8lf\n", H.z, SMag[i * NH + j].z / N, SMagA[i * NH + j] / N);
                 int t = (j / mcInfo.HTimes);
                 if ((t & 3) == 0 || (t & 3) == 3) H = Add(H, mcInfo.HDelta);
                 else H = Add(H, Rev(mcInfo.HDelta));
