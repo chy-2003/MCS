@@ -123,10 +123,9 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo,
                 if (mcInfo.HSteps > 0 && (i % mcInfo.HSteps == 0)) {
                     int t = (i / mcInfo.HSteps) / mcInfo.HTimes;
                     if ((t & 3) == 0 || (t & 3) == 3)
-                        Mesh[step]->Field = Add(Mesh[step]->Field, mcInfo.HDelta);
+                        UpdateHCPU_NoOMP(Mesh[step], superCell, mcInfo.HDelta);
                     else
-                        Mesh[step]->Field = Add(Mesh[step]->Field, Rev(mcInfo.HDelta));
-                    GetEnergyCPU_NoOMP(Mesh[step], superCell);
+                        UpdateHCPU_NoOMP(Mesh[step], superCell, Rev(mcInfo.HDelta));
                 }
                 if (i % ProgressCount == 0) {
                     #pragma omp critical (ProgressCnt)

@@ -51,6 +51,8 @@
  *                                                                                    显存都不是很大的个人PC而言，不需要使用这个函数。
  *     double GetDeltaE_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int n, int id1, Vec3 S);
  *                                                                         【对外接口】将位于X,Y,Z,n的dot值改为S的能量差值。
+ *     void UpdateHCPU_NoOMP(rMesh *tar, SuperCell *superCell, Vec3 HDelta);
+ *                                                                         【对外接口】更改外场
  *     void GetVec3(double Norm, int Model, double u, double v);           【对外接口】根据参数获得向量
  * 
  * 【以下函数仅和CPU、内存有关】
@@ -156,7 +158,7 @@ void GetEnergyCPU_NoOMP(rMesh *tar, SuperCell *superCell) {
             for (int z = 0; z < superCell->c; ++z) {
                 int id1 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N;
                 for (int n = 0; n < superCell->unitCell.N; ++n) {
-                    Energy += Cal393(tar->Dots[id1 + n], superCell->unitCell.Dots[n].A, tar->Dots[id1 + n]) +
+                    Energy += Cal393(tar->Dots[id1 + n], superCell->unitCell.Dots[n].A, tar->Dots[id1 + n]) -
                               InMul(tar->Field, tar->Dots[id1 + n]);
                 }
                 Bond* bond = superCell->unitCell.bonds;
@@ -171,6 +173,14 @@ void GetEnergyCPU_NoOMP(rMesh *tar, SuperCell *superCell) {
                 }
             }
     tar->Energy = Energy;
+    return;
+}
+
+void UpdateHCPU_NoOMP(rMesh *tar, SuperCell *superCell, Vec3 HDelta) {
+    int N = superCell->a * superCell->b * superCell->c * superCell->unitCell.N;
+    for (int i = 0; i < N; ++i)
+        tar->Energy += -InMul(HDelta, tar->Dots[i]);
+    tar->Field = Add(tar->Field, HDelta);
     return;
 }
 
@@ -382,7 +392,7 @@ __global__ void GetDotE(double *e, rMesh *mesh, SuperCell *superCell, int n) {
     if (N >= n) return;
     int nDot = blockIdx.y;
     int id = N * superCell->unitCell.N + nDot;
-    e[id] = Cal393((mesh->Dots)[id], (superCell->unitCell).Dots[nDot].A, (mesh->Dots)[id]) +
+    e[id] = Cal393((mesh->Dots)[id], (superCell->unitCell).Dots[nDot].A, (mesh->Dots)[id]) -
             InMul(mesh->Field, (mesh->Dots)[id]);
     return;
 }
@@ -430,8 +440,8 @@ double GetDeltaE_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int
     int x, y, z;
     Bond* bond = superCell->unitCell.bonds;
     double Ans = Cal393(              S, superCell->unitCell.Dots[n].A,               S) - 
-                 Cal393(Mesh->Dots[id1], superCell->unitCell.Dots[n].A, Mesh->Dots[id1]) + 
-                 InMul(Mesh->Field,               S) - 
+                 Cal393(Mesh->Dots[id1], superCell->unitCell.Dots[n].A, Mesh->Dots[id1]) - 
+                 InMul(Mesh->Field,               S) + 
                  InMul(Mesh->Field, Mesh->Dots[id1]);
     while (bond != NULL) {
         if (n == bond->s) {

@@ -84,16 +84,16 @@ int main() {
             printf("Hz, Bz, \n");
             Vec3 H = mcInfo.HStart;
             for (int j = 0; j < NH; ++j) {
+                printf("%20.8lf, %20.8lf\n", H.z, Div(SMag[i * NH + j], N).z);
                 int t = (j / mcInfo.HTimes);
                 if ((t & 3) == 0 || (t & 3) == 3) H = Add(H, mcInfo.HDelta);
                 else H = Add(H, Rev(mcInfo.HDelta));
-                printf("%20.8lf, %20.8lf\n", H.z, Div(SMag[i * NH + j], N).z);
             }
         }
     }
 
     DestroySuperCell(superCell); superCell = NULL;
-    free(SMag); free(SMag2); free(SumE); free(SumE2);
+    free(SMag); free(SMag2); free(SumE); free(SumE2); free(SMagA);
     fprintf(stderr, "[INFO][from MCS_main] Program successfully ended.\n");
     return 0;
 }
