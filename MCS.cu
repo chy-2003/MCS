@@ -20,30 +20,33 @@
 // RTX 2050
 //     nvcc MCS.cu -o MCS -Xcompiler -openmp -Xptxas -O3 -arch=sm_80 -diag-suppress 20011 -diag-suppress 20014
 
+//1meV = 11.604609K
+
 
 
 double *SumE2, *SumE, *SMag2, *SMagA;
 Vec3 *SMag;
 int NH, NS;
 MCInfo mcInfo;
+SuperCell *superCell = NULL;
 
-void calFunc(int Id, double Energy, Vec3 mag, int I) {
+void calFunc(int Id, rMesh *mesh, int I) {
     int N = 0;
     if (mcInfo.HSteps > 0) N = (I / mcInfo.HSteps) % NH; 
     #pragma omp critical (GetAns)
     {
-        SMag [Id / mcInfo.NTimes * NH + N]  = Add(SMag[Id / mcInfo.NTimes * NH + N], mag);
-        SMag2[Id / mcInfo.NTimes * NH + N] += InMul(mag, mag);
-        SMagA[Id / mcInfo.NTimes * NH + N] += std::sqrt(InMul(mag, mag));
-        SumE2[Id / mcInfo.NTimes * NH + N] += Energy * Energy;
-        SumE [Id / mcInfo.NTimes * NH + N] += Energy;
+        SMag [Id / mcInfo.NTimes * NH + N]  = Add(SMag[Id / mcInfo.NTimes * NH + N], mesh->Mag);
+        SMag2[Id / mcInfo.NTimes * NH + N] += InMul(mesh->Mag, mesh->Mag);
+        SMagA[Id / mcInfo.NTimes * NH + N] += std::sqrt(InMul(mesh->Mag, mesh->Mag));
+        SumE2[Id / mcInfo.NTimes * NH + N] += mesh->Energy * mesh->Energy;
+        SumE [Id / mcInfo.NTimes * NH + N] += mesh->Energy;
     }
     return;
 }
 
 int main() {
     FILE *structureInput = fopen("Input_Structure", "r");
-    SuperCell *superCell = InitStructure(structureInput);
+    superCell = InitStructure(structureInput);
     fclose(structureInput);
 
     FILE *MCInput = fopen("Input_MC", "r");
@@ -76,19 +79,43 @@ int main() {
         SMagA[i] /= NS;
     }
     if (mcInfo.HSteps <= 0) {
-        printf("T, M, Cv, Chi, aM, \n");
-        for (int i = 0; i < mcInfo.TSteps; ++i) {
-            printf("%6.2lf, %12.8lf, %20.8lf, %20.8lf, %20.8lf\n", 
+        if (superCell->Type == ModelM) {
+            printf("T, M, Cv, Chi, aM, \n");
+            for (int i = 0; i < mcInfo.TSteps; ++i) {
+                printf("%6.2lf, %12.8lf, %20.8lf, %20.8lf, %20.8lf\n", 
                     mcInfo.TStart + i * mcInfo.TDelta, 
                     SMagA[i] / N, 
                     (SumE2[i] - SumE[i] * SumE[i]) / (mcInfo.TStart + i * mcInfo.TDelta) / N, 
                     (SMag2[i] - SMagA[i] * SMagA[i]) / (mcInfo.TStart + i * mcInfo.TDelta) / N,
                     SMag[i].z / N);
+            }
+        } else {
+            switch (superCell->Type) {
+            case ModelEC42AFE:
+                printf("T, rP, P_C42AFE, \n");
+                break;
+            case ModelEP22AFE:
+                printf("T, rP, P_P22AFE, \n");
+                break;
+            case ModelEP21FE:
+                printf("T, rP, P_P21FE, \n");
+                break;
+            
+            default:
+                break;
+            }
+            for (int i = 0; i < mcInfo.TSteps; ++i) {
+                printf("%6.2lf, %12.8lf, %12.8lf, \n", 
+                    mcInfo.TStart + i * mcInfo.TDelta, 
+                    SMag[i].z / N,
+                    SMagA[i] / N);
+            }
         }
     } else {
         for (int i = 0; i < mcInfo.TSteps; ++i) {
             printf("T = %6.2lf\n", mcInfo.TStart + i * mcInfo.TDelta);
-            printf("Hz, Bz, M\n");
+            if (superCell->Type == ModelM) printf("Hz, Bz, M, \n");
+            else printf("Ez, Pz, P, \n");
             Vec3 H = mcInfo.HStart;
             for (int j = 0; j < NH; ++j) {
                 printf("%20.8lf, %20.8lf, %20.8lf\n", H.z, SMag[i * NH + j].z / N, SMagA[i * NH + j] / N);

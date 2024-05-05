@@ -4,6 +4,10 @@
  * const
  *     kB
  *     Pi
+ *     ModelM
+ *     ModelEC42AFE
+ *     ModelEP22AFE
+ *     ModelP21FE
  *
  *  
  * struct
@@ -19,7 +23,11 @@
  *     Dot                                               原胞内单点信息
  *         Vec3 Pos;                                         原胞内位置，分数坐标（目前没什么用）
  *         Vec3 a;                                           向量值，表示极化或者磁矩（目前仅和模长有关）
- *         Vec9 A;                                           各项异性，以开尔文为单位
+ *         Vec9 A;                                           各项异性，以开尔文为单位 
+ *                                                           对于ModelM，能量贡献 aAa；
+ *                                                           对于ModelE，能量贡献 A.xx*a^2/2 + A.xy*a^4/4 + A.xz*a^6/6 + A.yx*a^8/8
+ *                                                           另外，对于ModelE，A.yy和A.zy 分别代表<Cv3>和<Cv4> ...
+ *                                                           (now ModelE only for 2D structure z = 1, N = 1)
  *         double Norm;                                      向量模长
  *     UnitCell                                          原胞信息
  *         int N;                                            磁性原子/偶极子个数
@@ -28,6 +36,7 @@
  *         Dot *dots;                                        长度为N的数组，保存dot信息
  *         Bond *bonds;                                      指针，前向星，保存bond信息
  *     SuperCell                                         超胞信息
+ *         int Type;                                         模型  ModelM（磁） 或者 ModelE（电）
  *         int a, b, c;                                      沿三个基失扩胞的倍数
  *         UnitCell unitCell;                                原胞
  * 
@@ -63,6 +72,11 @@
 #include <cstdio>
 #include <cmath>
 #include "CudaInfo.cuh"
+
+#define ModelM 0
+#define ModelEC42AFE 1
+#define ModelEP22AFE 2
+#define ModelEP21FE  3
 
 const double kB = 1.380649e-23;
 const double Pi = 3.14159265358979323846264;
@@ -177,15 +191,16 @@ void DestroyUnitCell(UnitCell *self) {
 }
 
 struct SuperCell {
+    int Type;
     int a, b, c;
     UnitCell unitCell;
     SuperCell() : a(1), b(1), c(1), unitCell() {}
     ~SuperCell() {}                                                                           //【重要】  务必保证 DestroySuperCell 在析构函数前被调用
 };
-SuperCell* InitSuperCell(int a, int b, int c) {
+SuperCell* InitSuperCell(int a, int b, int c, int Type = ModelM) {
     SuperCell *self = NULL;
     self = (SuperCell*)malloc(sizeof(SuperCell));
-    self->a = a; self->b = b; self->c = c;
+    self->a = a; self->b = b; self->c = c; self->Type = Type;
     return self;
 };
 void DestroySuperCell(SuperCell *self) {                                                     //【重要】这里free了自己！
@@ -196,15 +211,15 @@ void DestroySuperCell(SuperCell *self) {                                        
 
 SuperCell* InitStructure(FILE *file) {                                      //从文件读取结构信息以及相互关联信息，不包括蒙卡部分
     fprintf(stderr, "[INFO][from Structure_InitStructure] Start importing structure data.\n");
-    int a, b, c;
-    fscanf(file, "%d%d%d", &a, &b, &c);
+    int a, b, c, type;
+    fscanf(file, "%d%d%d%d", &a, &b, &c, &type);
     Vec3 A, B, C;
     fscanf(file, "%lf%lf%lf", &(A.x), &(A.y), &(A.z));
     fscanf(file, "%lf%lf%lf", &(B.x), &(B.y), &(B.z));
     fscanf(file, "%lf%lf%lf", &(C.x), &(C.y), &(C.z));
     int N;
     fscanf(file, "%d", &N);
-    SuperCell* self = InitSuperCell(a, b, c);
+    SuperCell* self = InitSuperCell(a, b, c, type);
     InitUnitCell(&(self->unitCell), N, A, B, C);
     Vec9 D;
     for (int i = 0; i < N; ++i) {

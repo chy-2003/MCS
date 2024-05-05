@@ -12,9 +12,9 @@
  *     CUBlockY 16                    blockDim.y for 3D
  *     CUBlockz 1                     blockDim.z for 3D
  * 
- *     ModelIsing 1
- *     ModelXY 2
- *     ModelHeisenberg 3
+ *     ModelIsing 1                   only z
+ *     ModelXY 2                      only xy
+ *     ModelHeisenberg 3              both xyz
  * 
  * 
  * struct
@@ -44,15 +44,21 @@
  *                                                                                    仅花费0.2ms，但内存到显存的拷贝花销巨大。在1G个
  *                                                                                    int求和量级之前，一般不会比CPU更快。所以对于内存
  *                                                                                    显存都不会很大的个人PC而言，不需要用到这个函数。
- *     void GetEnergyCPU(rMesh *tar, SuperCell *superCell);                【对外接口】获得体系总能量，使用多线程CPU。
- *     void GetEnergyCPU_NoOMP(rMesh *tar, SuperCell *superCell);          【对外接口】获得体系总能量，使用单线程CPU。若外层已进行并发
- *                                                                                    则使用这个
+ *     void GetEnergyMCPU(rMesh *tar, SuperCell *superCell);               【对外接口】获得体系总能量，使用多线程CPU。 ModelM
+ *     void GetEnergyMCPU_NoOMP(rMesh *tar, SuperCell *superCell);         【对外接口】获得体系总能量，使用单线程CPU。若外层已进行并发
+ *                                                                                    则使用这个 ModelM
+ *     void GetEnergyECPU_NoOMP(rMesh *tar, SuperCell *superCell);         【对外接口】获得体系总能量，使用单线程CPU。若外层已进行并发
+ *                                                                                    则使用这个 ModelE
  *     void GetEnergyGPU(rMesh *tar, SuperCell *str, rBonds *RBonds);      【对外接口】获得体系总能量，使用GPU。与求和相同，对于内存和
  *                                                                                    显存都不是很大的个人PC而言，不需要使用这个函数。
- *     double GetDeltaE_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int n, int id1, Vec3 S);
- *                                                                         【对外接口】将位于X,Y,Z,n的dot值改为S的能量差值。
+ *     double GetDeltaEM_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int n, int id1, Vec3 S);
+ *                                                                         【对外接口】将位于X,Y,Z,n的dot值改为S的能量差值。 ModelM
+ *     double GetDeltaEE_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int n, int id1, Vec3 S);
+ *                                                                         【对外接口】将位于X,Y,Z,n的dot值改为S的能量差值。 ModelE
  *     void UpdateHCPU_NoOMP(rMesh *tar, SuperCell *superCell, Vec3 HDelta);
- *                                                                         【对外接口】更改外场
+ *                                                                         【对外接口】更改外场 ModelM
+ *     void UpdateECPU_NoOMP(rMesh *tar, SuperCell *superCell, Vec3 HDelta);
+ *                                                                         【对外接口】更改外场 ModelE
  *     void GetVec3(double Norm, int Model, double u, double v);           【对外接口】根据参数获得向量
  * 
  * 【以下函数仅和CPU、内存有关】
@@ -95,6 +101,10 @@
 #define ModelXY 2
 #define ModelHeisenberg 3
 
+inline double CoefficientM(int x, int y, int z) { return 1; }
+inline double CoefficientEC42AFE(int x, int y, int z) { return ((x + y) & 1) ? -1 : 1; }
+inline double CoefficientEP22AFE(int x, int y, int z) { return (x & 1) ? -1 : 1; }
+inline double CoefficientEP21FE(int x, int y, int z) { return 1; }
 
 int MaxThreads = omp_get_max_threads();
 
@@ -125,7 +135,7 @@ struct rMesh {                                                                  
     ~rMesh() {}
 };
 
-void GetEnergyCPU(rMesh *tar, SuperCell *superCell) {
+void GetEnergyMCPU(rMesh *tar, SuperCell *superCell) {
     double Energy = 0;
     #pragma omp parallel for num_threads(MaxThreads) reduction(+: Energy)
     for (int x = 0; x < superCell->a; ++x)
@@ -151,7 +161,7 @@ void GetEnergyCPU(rMesh *tar, SuperCell *superCell) {
     return;
 }
 
-void GetEnergyCPU_NoOMP(rMesh *tar, SuperCell *superCell) {
+void GetEnergyMCPU_NoOMP(rMesh *tar, SuperCell *superCell) {
     double Energy = 0;
     for (int x = 0; x < superCell->a; ++x)
         for (int y = 0; y < superCell->b; ++y) 
@@ -176,6 +186,68 @@ void GetEnergyCPU_NoOMP(rMesh *tar, SuperCell *superCell) {
     return;
 }
 
+inline int Sign(double x) { if (x > 0) return 1; else if (x < 0) return -1; return 0; }
+
+void GetEnergyECPU_NoOMP(rMesh *tar, SuperCell *superCell) {
+    double Energy = 0;
+    for (int x = 0; x < superCell->a; ++x)
+        for (int y = 0; y < superCell->b; ++y)
+            for (int z = 0; z < superCell->c; ++z) {
+                int id1 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N;
+                for (int n = 0; n < superCell->unitCell.N; ++n) {
+                    double norm = superCell->unitCell.Dots[n].Norm;
+                    norm = norm * norm;
+                    Energy += superCell->unitCell.Dots[n].A.xx * norm / 2 + 
+                            superCell->unitCell.Dots[n].A.xy * norm *norm / 4 + 
+                            superCell->unitCell.Dots[n].A.zx * norm * norm * norm / 6 +
+                            superCell->unitCell.Dots[n].A.yx * norm * norm * norm * norm / 8;
+                    if (x == 0 || x == superCell->a - 1)
+                        Energy += InMul(tar->Field, tar->Dots[id1 + n]);
+                }
+                Bond* bond = superCell->unitCell.bonds;
+                int X, Y, Z, id2;
+                while (bond != NULL) {
+                    X = x + bond->Gx; if (X < 0) X += superCell->a; if (X >= superCell->a) X -= superCell->a;
+                    Y = y + bond->Gy; if (Y < 0) Y += superCell->b; if (Y >= superCell->b) Y -= superCell->b;
+                    Z = z + bond->Gz; if (Z < 0) Z += superCell->c; if (Z >= superCell->c) Z -= superCell->c;
+                    id2 = ((X * superCell->b + Y) * superCell->c + z) * superCell->unitCell.N;
+                    Energy += Cal393(tar->Dots[id1 + bond->s], bond->A, tar->Dots[id2 + bond->t]);
+                    bond = bond->Next;
+                }
+            }
+    for (int x = 0; x < superCell->a; ++x) {
+        int y = 0;
+        while (y + 1 < superCell->b && 
+            Sign(tar->Dots[x * superCell->b + y].z) == Sign(tar->Dots[x * superCell->b + y + 1].z)) ++y;
+        int Flg = 1, Cnt; 
+        if (y >= superCell->b - 1) {
+            Cnt = superCell->b;
+            if (Cnt == 3) Energy += superCell->unitCell.Dots[0].A.yy;
+            if (Cnt == 4) Energy += superCell->unitCell.Dots[0].A.yz;
+            if (Cnt == 5) Energy += superCell->unitCell.Dots[0].A.zx;
+            if (Cnt == 6) Energy += superCell->unitCell.Dots[0].A.zy;
+            if (Cnt >= 7) Energy += superCell->unitCell.Dots[0].A.zz;
+        } else {
+            while (Flg) {
+                Cnt = 1; ++y;
+                if (y >= superCell->b) { y = 0; Flg = 0; }
+                while (Sign(tar->Dots[x * superCell->b + y].z) == 
+                    Sign(tar->Dots[x * superCell->b + ((y + 1 >= superCell->b) ? 0 : y + 1)].z)) {
+                    ++y; ++Cnt;
+                    if (y >= superCell->b) { y = 0; Flg = 0; }
+                }
+                if (Cnt == 3) Energy += superCell->unitCell.Dots[0].A.yy;
+                if (Cnt == 4) Energy += superCell->unitCell.Dots[0].A.yz;
+                if (Cnt == 5) Energy += superCell->unitCell.Dots[0].A.zx;
+                if (Cnt == 6) Energy += superCell->unitCell.Dots[0].A.zy;
+                if (Cnt >= 7) Energy += superCell->unitCell.Dots[0].A.zz;
+            }
+        }
+    }
+    tar->Energy = Energy;
+    return;
+}
+
 void UpdateHCPU_NoOMP(rMesh *tar, SuperCell *superCell, Vec3 HDelta) {
     int N = superCell->a * superCell->b * superCell->c * superCell->unitCell.N;
     for (int i = 0; i < N; ++i)
@@ -184,11 +256,19 @@ void UpdateHCPU_NoOMP(rMesh *tar, SuperCell *superCell, Vec3 HDelta) {
     return;
 }
 
-rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T, int Model) {
+void UpdateECPU_NoOMP(rMesh *tar, SuperCell *superCell, Vec3 HDelta) {
+    for (int y = 0; y < superCell->b; ++y) {
+        tar->Energy += InMul(HDelta, tar->Dots[y]);
+        tar->Energy += InMul(HDelta, tar->Dots[(superCell->a - 1) * superCell->b + y]);
+    }
+    tar->Field = Add(tar->Field, HDelta);
+    return;
+}
+
+rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T, int Model, void (*GetEnergy)(rMesh*, SuperCell*), double Coefficient(int, int, int)) {
     rMesh* self = NULL;
     self = (rMesh*)malloc(sizeof(rMesh));
     self->Field = Field; 
-    if (T < 1e-9) T = 1e-9;
     self->T = T;
     self->Energy = 0;
     self->N = superCell->a * superCell->b * superCell->c;
@@ -196,24 +276,34 @@ rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T, int Model) {
     self->NDots = n * self->N;
     self->Dots = NULL;
     self->Dots = (Vec3*)malloc(self->NDots * sizeof(Vec3));
-    #pragma omp parallel for num_threads(MaxThreads)
     for (int i = 0; i < self->N; ++i) {
         std::random_device RandomDevice;
         std::mt19937 Mt19937(RandomDevice());
         std::uniform_real_distribution<> URD(0, 1);
         for (int j = 0; j < n; ++j) {
             self->Dots[i * n + j] = GetVec3(superCell->unitCell.Dots[j].Norm, Model, URD(Mt19937), URD(Mt19937));
+            //self->Dots[i * n + j] = Vec3(0, 0, superCell->unitCell.Dots[j].Norm);
         }
     }
-    double x = 0, y = 0, z = 0;
-    #pragma omp parallel for num_threads(MaxThreads) reduction(+:x, y, z)
-    for (int j = 0; j < self->NDots; ++j) {
-        x += self->Dots[j].x;
-        y += self->Dots[j].y;
-        z += self->Dots[j].z;
+
+/*
+    for (int i = 0; i < superCell->a; ++i) {
+        for (int j = 0; j < superCell->b; ++j) 
+            self->Dots[i * superCell->b + j].z = 0.45 * (((i + j) & 1) ? -1 : 1);
     }
-    self->Mag = Vec3(x, y, z);
-    GetEnergyCPU_NoOMP(self, superCell);
+*/
+    self->Mag = Vec3(0, 0, 0);
+    for (int i = 0; i < superCell->a; ++i)
+        for (int j = 0; j < superCell->b; ++j)
+            for (int k = 0; k < superCell->c; ++k)
+                for (int l = 0; l < superCell->unitCell.N; ++l) {
+                    self->Mag = Add(self->Mag, 
+                            Mul(self->Dots[((i * superCell->b + j) * superCell->c + k) * superCell->unitCell.N + l], Coefficient(i, j, k)));
+                    //printf("%d %d %d %d, %.2lf\n", i, j, k, l, 
+                    //    Mul(self->Dots[((i * superCell->b + j) * superCell->c + k) * superCell->unitCell.N + l], Coefficient(i, j, k)).z);
+                }
+
+    GetEnergy(self, superCell);
     return self;
 }
 void DestroyRMesh(rMesh *Tar) { free(Tar->Dots); free(Tar); return; }
@@ -434,7 +524,7 @@ void GetEnergyGPU(rMesh *tar, SuperCell *str, rBonds *RBonds) {
     return;
 }
 
-double GetDeltaE_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int n, Vec3 S) {
+double GetDeltaEM_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int n, Vec3 S) {
     int id1 = ((X * superCell->b + Y) * superCell->c + Z) * superCell->unitCell.N + n;
     int id2;
     int x, y, z;
@@ -460,6 +550,56 @@ double GetDeltaE_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int
         }
         bond = bond->Next;
     }
+    return Ans;
+}
+
+double GetDeltaEE_CPU(rMesh *Mesh, SuperCell *superCell, int X, int Y, int Z, int n, Vec3 S) {
+    int id1 = ((X * superCell->b + Y) * superCell->c + Z) * superCell->unitCell.N + n;
+    int id2;
+    int x, y, z;
+    Bond* bond = superCell->unitCell.bonds;
+    double Ans = 0;
+    if (X == 0 || X == superCell->a - 1) Ans = InMul(Mesh->Field, S) - InMul(Mesh->Field, Mesh->Dots[id1]);
+    while (bond != NULL) {
+        if (n == bond->s) {
+            x = X + bond->Gx; if (x < 0) x += superCell->a; if (x >= superCell->a) x -= superCell->a;
+            y = Y + bond->Gy; if (y < 0) y += superCell->b; if (y >= superCell->b) y -= superCell->b;
+            z = Z + bond->Gz; if (z < 0) z += superCell->c; if (z >= superCell->c) z -= superCell->c;
+            id2 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + bond->t;
+            Ans += Cal393(S, bond->A, Mesh->Dots[id2]) - Cal393(Mesh->Dots[id1], bond->A, Mesh->Dots[id2]);
+        }
+        if (n == bond->t) {
+            x = X - bond->Gx; if (x < 0) x += superCell->a; if (x >= superCell->a) x -= superCell->a;
+            y = Y - bond->Gy; if (y < 0) y += superCell->b; if (y >= superCell->b) y -= superCell->b;
+            z = Z - bond->Gz; if (z < 0) z += superCell->c; if (z >= superCell->c) z -= superCell->c;
+            id2 = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + bond->s;
+            Ans += Cal393(Mesh->Dots[id2], bond->A, S) - Cal393(Mesh->Dots[id2], bond->A, Mesh->Dots[id1]);
+        }
+        bond = bond->Next;
+    }
+    int cnt1 = 0;
+    y = Y;
+    while (y > 0 && Sign(Mesh->Dots[id1].z) == Sign(Mesh->Dots[id1 - Y + y - 1].z)) { --y; ++cnt1; }
+    y = Y;
+    while (y + 1 < superCell->b && Sign(Mesh->Dots[id1].z) == Sign(Mesh->Dots[id1 - Y + y + 1].z)) { ++y; ++cnt1; }
+    ++cnt1;
+    if (cnt1 == 3) Ans -= superCell->unitCell.Dots[0].A.yy;
+    if (cnt1 == 4) Ans -= superCell->unitCell.Dots[0].A.yz;
+    if (cnt1 == 5) Ans -= superCell->unitCell.Dots[0].A.zx;
+    if (cnt1 == 6) Ans -= superCell->unitCell.Dots[0].A.zy;
+    if (cnt1 == 7) Ans -= superCell->unitCell.Dots[0].A.zz;
+
+    y = Y; cnt1 = 0;
+    while (y > 0 && -Sign(Mesh->Dots[id1].z) == Sign(Mesh->Dots[id1 - Y + y - 1].z)) { --y; ++cnt1; }
+    y = Y;
+    while (y + 1 < superCell->b && -Sign(Mesh->Dots[id1].z) == Sign(Mesh->Dots[id1 - Y + y + 1].z)) { ++y; ++cnt1; }
+    ++cnt1;
+    if (cnt1 == 3) Ans += superCell->unitCell.Dots[0].A.yy;
+    if (cnt1 == 4) Ans += superCell->unitCell.Dots[0].A.yz;
+    if (cnt1 == 5) Ans += superCell->unitCell.Dots[0].A.zx;
+    if (cnt1 == 6) Ans += superCell->unitCell.Dots[0].A.zy;
+    if (cnt1 == 7) Ans += superCell->unitCell.Dots[0].A.zz;
+
     return Ans;
 }
 
