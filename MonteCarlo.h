@@ -36,8 +36,9 @@
 
 #include <cmath>
 #include <chrono>
-#include "Structure.cuh"
-#include "Runtime.cuh"
+#include <algorithm>
+#include "Structure.h"
+#include "Runtime.h"
 
 #define ProgressCount 100000
 
@@ -52,7 +53,7 @@ struct MCInfo {
     int HTimes;
     int Model;
     MCInfo() : NSkip(0), NCall(0), NTimes(0), 
-            TStart(0), TDelta(0), TSteps(0), 
+            TStart(0), TDelta(0), TSteps(0),
             HSteps(0), HStart(), HDelta(), HTimes(0), 
             Model(0) {}
     ~MCInfo() {}
@@ -75,7 +76,7 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
 
     fprintf(stderr, "[INFO][from MonteCarlo_MonteCarloMetropolisCPU] starting MC...\n");
     int TotalMesh = mcInfo.TSteps * mcInfo.NTimes;
-    rMesh **Mesh = (rMesh**)malloc(sizeof(rMesh*) * TotalMesh);
+    rMesh **Mesh = (rMesh**)malloc(sizeof(rMesh*) * TotalMesh * 2);
     #pragma omp parallel for num_threads(MaxThreads)
     for (int i = 0; i < TotalMesh; ++i) {
         switch (superCell->Type) {
@@ -101,20 +102,11 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
     }
     fprintf(stderr, "[INFO][from MonteCarlo_MonteCarloMetropolisCPU] Mesh build ok.\n");
 
-    /*
-    for (int i = 0; i < superCell->a; ++i) {
-        for (int j = 0; j < superCell->b; ++j) 
-            printf("%5.2lf ", Mesh[0]->Dots[i * superCell->b + j].z);
-        printf("\n");
-    }
-    int CntP[8][8];
-    memset(CntP, 0, sizeof(CntP));
-    */
     double Cnt = 0;
-    double TotalCnt = 1.0 * TotalMesh * (mcInfo.NSkip + mcInfo.NCall);
+    double TotalCnt = 1.0 * mcInfo.NTimes * (mcInfo.NSkip + mcInfo.NCall);
 
     #pragma omp parallel for num_threads(MaxThreads)
-    for (int step = 0; step < TotalMesh; ++step) {
+    for (int nTimes = 0; nTimes < mcInfo.NTimes; ++nTimes) {
         std::random_device RandomDevice;
         std::mt19937 Mt19937(RandomDevice());
         std::uniform_int_distribution<> UIDA(0, superCell->a - 1);
@@ -126,27 +118,26 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
         int x, y, z, n;
 
         double dE, RandV, RandC;
-        int Agree, id;
+        int Agree, id, step, Step;
         Vec3 S(0, 0, 0);
-        for (int i = 0; i < mcInfo.NSkip + mcInfo.NCall; ) {
-            x = UIDA(Mt19937); y = UIDB(Mt19937); z = UIDC(Mt19937); n = UIDN(Mt19937);
-            //++CntP[x][y];
-            u = URD(Mt19937); if (mcInfo.Model == ModelHeisenberg) v = URD(Mt19937);
-            id = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + n;
-            S = GetVec3(superCell->unitCell.Dots[n].Norm, mcInfo.Model, u, v);
-            if (superCell->Type == ModelM)
-                dE = GetDeltaEM_CPU(Mesh[step], superCell, x, y, z, n, S);
-            else 
-                dE = GetDeltaEE_CPU(Mesh[step], superCell, x, y, z, n, S);
-            Agree = 0;
-            if (dE <= 0) Agree = 1;
-            else if (Mesh[step]->T > 1e-9) {
-                RandC = std::exp(-dE / (Mesh[step]->T));
-                RandV = URD(Mt19937);
-                if (RandV < RandC) Agree = 1;
-            }
-            //printf("dE = %.8lf, T = %.2lf, agree = %d, SP = %.8lf\n", dE, Mesh[step]->T, Agree, Mesh[step]->Mag.z);
-            if (Agree == 1) {
+        for (int i = 0; i < mcInfo.NSkip + mcInfo.NCall; ++i) {
+            for (int j = 0; j < mcInfo.TSteps; ++j) {
+                step = j * mcInfo.NTimes + nTimes;
+                Agree = 0;
+                while (Agree == 0) {
+                    x = UIDA(Mt19937); y = UIDB(Mt19937); z = UIDC(Mt19937); n = UIDN(Mt19937);
+                    u = URD(Mt19937); 
+                    if (mcInfo.Model == ModelHeisenberg) v = URD(Mt19937);
+                    id = ((x * superCell->b + y) * superCell->c + z) * superCell->unitCell.N + n;
+                    S = GetVec3(superCell->unitCell.Dots[n].Norm, mcInfo.Model, u, v);
+                    if (superCell->Type == ModelM) dE = GetDeltaEM_CPU(Mesh[step], superCell, x, y, z, n, S);
+                    else dE = GetDeltaEE_CPU(Mesh[step], superCell, x, y, z, n, S);
+                    if (dE <= 0) Agree = 1;
+                    else if (Mesh[step]->T > 1e-9) {
+                        RandC = std::exp(-dE / (Mesh[step]->T)); RandV = URD(Mt19937);
+                        if (RandV < RandC) Agree = 1;
+                    }
+                }
                 Mesh[step]->Energy += dE;
                 switch (superCell->Type) {
                     case ModelM : 
@@ -165,49 +156,46 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
                         break;
                 }
                 Mesh[step]->Dots[id] = S;
-                if (i >= mcInfo.NSkip) returnFunc(step, Mesh[step], i);
-                ++i;
                 if (mcInfo.HSteps > 0 && (i % mcInfo.HSteps == 0)) {
                     int t = (i / mcInfo.HSteps - 1) / mcInfo.HTimes;
                     if ((t & 3) == 0 || (t & 3) == 3) {
-                        if (superCell->Type == ModelM)
-                            UpdateHCPU_NoOMP(Mesh[step], superCell, mcInfo.HDelta);
-                        else 
-                            UpdateECPU_NoOMP(Mesh[step], superCell, mcInfo.HDelta);
+                        if (superCell->Type == ModelM) UpdateHCPU_NoOMP(Mesh[step], superCell, mcInfo.HDelta);
+                        else UpdateECPU_NoOMP(Mesh[step], superCell, mcInfo.HDelta);
                     } else {
-                        if (superCell->Type == ModelM)
-                            UpdateHCPU_NoOMP(Mesh[step], superCell, Rev(mcInfo.HDelta));
-                        else
-                            UpdateECPU_NoOMP(Mesh[step], superCell, Rev(mcInfo.HDelta));
-                    }
-                }
-                if (i % ProgressCount == 0) {
-                    #pragma omp critical (ProgressCnt)
-                    {
-                        Cnt += ProgressCount;
-                        fprintf(stderr, "[INFO][from MonteCarlo_MonteCarloMetropolisCPU] MC Progress %6.2lf%%.\n", 100.0 * Cnt / TotalCnt);
+                        if (superCell->Type == ModelM) UpdateHCPU_NoOMP(Mesh[step], superCell, Rev(mcInfo.HDelta));
+                        else UpdateECPU_NoOMP(Mesh[step], superCell, Rev(mcInfo.HDelta));
                     }
                 }
             }
-        }                    
-        #pragma omp critical (ProgressCnt)
-        {
-            Cnt += (mcInfo.NSkip + mcInfo.NCall) % ProgressCount;
-            fprintf(stderr, "[INFO][from MonteCarlo_MonteCarloMetropolisCPU] MC Progress %6.2lf%%.\n", 100.0 * Cnt / TotalCnt);
+            for (int j = mcInfo.TSteps - 1; j > 0; --j) {
+                step = j * mcInfo.NTimes + nTimes;
+                Step = (j - 1) * mcInfo.NTimes + nTimes;
+                RandC = std::exp((Mesh[step]->Energy - Mesh[Step]->Energy) / 
+                        (1.0 / Mesh[step]->T - 1.0 / Mesh[Step]->T));
+                RandV = URD(Mt19937);
+                if (RandV < RandC) {
+                    std::swap(Mesh[step]->Dots, Mesh[Step]->Dots);
+                    std::swap(Mesh[step]->Energy, Mesh[Step]->Energy);
+                    std::swap(Mesh[step]->Field, Mesh[Step]->Field);
+                    std::swap(Mesh[step]->Mag, Mesh[step]->Mag);
+                }
+            }
+            if (i >= mcInfo.NSkip)
+                for (int j = 0; j < mcInfo.TSteps; ++j) {
+                    step = j * mcInfo.NTimes + nTimes;
+                    returnFunc(step, Mesh[Step], i);
+                }
+            if ((i + 1) % ProgressCount == 0) {
+                #pragma omp critical (GetProgress)
+                {
+                    Cnt += ProgressCount;
+                    fprintf(stderr, "[INFO][from MonteCarlo_MonteCarloMetropolisCPU] MC Progress %6.2lf%%\n",
+                            100.0 * Cnt / TotalCnt);
+                }
+            }
         }
     }
-/*
-    for (int i = 0; i < superCell->a; ++i) {
-        for (int j = 0; j < superCell->b; ++j) 
-            printf("%5.2lf ", Mesh[0]->Dots[i * superCell->b + j].z);
-        printf("\n");
-    }
-    for (int i = 0; i < superCell->a; ++i) {
-        for (int j = 0; j < superCell->b; ++j) 
-            printf("%10d ", CntP[i][j]);
-        printf("\n");
-    }
-*/
+
     #pragma omp parallel for num_threads(MaxThreads)
     for (int i = 0; i < TotalMesh; ++i) {
         if (Mesh[i] != NULL) DestroyRMesh(Mesh[i]); 

@@ -71,7 +71,7 @@
 
 #include <cstdio>
 #include <cmath>
-#include "CudaInfo.cuh"
+//#include "CudaInfo.cuh"
 
 #define ModelM 0
 #define ModelEC42AFE 1
@@ -88,13 +88,13 @@ struct Vec3 {                                                                   
     ~Vec3() {}
 };
 
-__host__ __device__ Vec3 Add(const Vec3 &a, const Vec3 &b) { return Vec3(a.x + b.x, a.y + b.y, a.z + b.z); }
-__host__ __device__ Vec3 Rev(const Vec3 &a) { return Vec3(-a.x, -a.y, -a.z); }
-__host__ __device__ Vec3 Dec(const Vec3 &a, const Vec3 &b) { return Vec3(a.x - b.x, a.y - b.y, a.z - b.z); }
-__host__ __device__ Vec3 CoMul(const Vec3 &a, const Vec3 &b) { return Vec3(a.x * b.x, a.y * b.y, a.z * b.z); }
-__host__ __device__ double InMul(const Vec3 &a, const Vec3 &b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-__host__ __device__ Vec3 Mul(const Vec3 &a, const double &b) { return Vec3(a.x * b, a.y * b, a.z * b); }
-__host__ __device__ Vec3 Div(const Vec3 &a, const double &b) { return Vec3(a.x / b, a.y / b, a.z / b); }
+inline Vec3 Add(const Vec3 &a, const Vec3 &b) { return Vec3(a.x + b.x, a.y + b.y, a.z + b.z); }
+inline Vec3 Rev(const Vec3 &a) { return Vec3(-a.x, -a.y, -a.z); }
+inline Vec3 Dec(const Vec3 &a, const Vec3 &b) { return Vec3(a.x - b.x, a.y - b.y, a.z - b.z); }
+inline Vec3 CoMul(const Vec3 &a, const Vec3 &b) { return Vec3(a.x * b.x, a.y * b.y, a.z * b.z); }
+inline double InMul(const Vec3 &a, const Vec3 &b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+inline Vec3 Mul(const Vec3 &a, const double &b) { return Vec3(a.x * b, a.y * b, a.z * b); }
+inline Vec3 Div(const Vec3 &a, const double &b) { return Vec3(a.x / b, a.y / b, a.z / b); }
 
 struct Vec9 {                                                                                //3*3矩阵
     double xx, xy, xz, yx, yy, yz, zx, zy, zz;
@@ -109,28 +109,28 @@ struct Vec9 {                                                                   
     ~Vec9() {}
 };
 
-__host__ __device__ Vec9 Add(const Vec9 &a, const Vec9 &b) { 
+inline Vec9 Add(const Vec9 &a, const Vec9 &b) { 
     return Vec9(a.xx + b.xx, a.xy + b.xy, a.xz + b.xz,  
                 a.yx + b.yx, a.yy + b.yy, a.yz + b.yz, 
                 a.zx + b.zx, a.zy + b.zy, a.zz + b.zz);
 }
-__host__ __device__ Vec9 Rev(const Vec9 &a) { 
+inline Vec9 Rev(const Vec9 &a) { 
     return Vec9(-a.xx, -a.xy, -a.xz, -a.yx, -a.yy, -a.yz, -a.zx, -a.zy, -a.zz);
 }
-__host__ __device__ Vec9 Del(const Vec9 &a, const Vec9 &b) { 
+inline Vec9 Del(const Vec9 &a, const Vec9 &b) { 
     return Vec9(a.xx - b.xx, a.xy - b.xy, a.xz - b.xz, 
                 a.yx - b.yx, a.yy - b.yy, a.yz - b.yz, 
                 a.zx - b.zx, a.zy - b.zy, a.zz - b.zz); 
 }
-__host__ __device__ Vec9 MaMul(const Vec9 &a, const Vec9 &b) {                                         //3*3矩阵乘法
+inline Vec9 MaMul(const Vec9 &a, const Vec9 &b) {                                         //3*3矩阵乘法
     return Vec9(a.xx * b.xx + a.xy * b.yx + a.xz * b.zx, a.xx * b.xy + a.xy * b.yy + a.xz * b.zy, a.xx * b.xz + a.xy * b.yz + a.xz * b.zz, 
                 a.yx * b.xx + a.yy * b.yx + a.yz * b.zx, a.yx * b.xy + a.yy * b.yy + a.yz * b.zy, a.yx * b.xz + a.yy * b.yz + a.yz * b.zz, 
                 a.zx * b.xx + a.zy * b.yx + a.zz * b.zx, a.zx * b.xy + a.zy * b.yy + a.zz * b.zy, a.zx * b.xz + a.zy * b.yz + a.zz * b.zz);
 }
-__host__ __device__ Vec9 DeMul(const Vec3 &a, const Vec3 &b) {                                         //笛卡尔积
+inline Vec9 DeMul(const Vec3 &a, const Vec3 &b) {                                         //笛卡尔积
     return Vec9(a.x * b.x, a.x * b.y, a.x * b.z, a.y * b.x, a.y * b.y, a.y * b.z, a.z * b.x, a.z * b.y, a.z * b.z);
 }
-__host__ __device__ double Cal393(const Vec3 &s, const Vec9 &A, const Vec3 &t) {                                       //s^T \cdot A \cdot t
+inline double Cal393(const Vec3 &s, const Vec9 &A, const Vec3 &t) {                                       //s^T \cdot A \cdot t
     return (s.x * A.xx + s.y * A.yx + s.z * A.zx) * t.x + 
            (s.x * A.xy + s.y * A.yy + s.z * A.zy) * t.y +
            (s.x * A.xz + s.y * A.yz + s.z * A.zz) * t.z;

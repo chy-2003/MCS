@@ -89,14 +89,14 @@
 
 #include <omp.h>
 #include <random>
-#include "CudaInfo.cuh"
-#include "Structure.cuh"
-
+//#include "CudaInfo.cuh"
+#include "Structure.h"
+/*
 #define CUBlockSize 256
 #define CUBlockX 16
 #define CUBlockY 16
 #define CUBlockZ 1 
-
+*/
 #define ModelIsing 1
 #define ModelXY 2
 #define ModelHeisenberg 3
@@ -307,7 +307,7 @@ rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T, int Model, void (*G
     return self;
 }
 void DestroyRMesh(rMesh *Tar) { free(Tar->Dots); free(Tar); return; }
-
+/*
 SuperCell* CopyStructureToGPU(SuperCell *superCell) {
     SuperCell *tar;
     checkCuda(cudaMallocManaged(&tar, sizeof(SuperCell)));
@@ -328,6 +328,7 @@ rMesh* CopyRMeshToGPU(rMesh *RMesh) {
     checkCuda(cudaMemcpy(tar->Dots, RMesh->Dots, sizeof(Vec3) * (RMesh->NDots), cudaMemcpyHostToDevice));
     return tar;
 }
+*/
 rMesh* CopyRMesh(rMesh *RMesh) {
     rMesh* tar = (rMesh*)malloc(sizeof(rMesh));
     tar->Energy = RMesh->Energy; tar->Field = RMesh->Field; tar->T = RMesh->T; tar->Mag = RMesh->Mag;
@@ -336,7 +337,7 @@ rMesh* CopyRMesh(rMesh *RMesh) {
     memcpy(tar->Dots, RMesh->Dots, sizeof(Vec3) * (RMesh->NDots));
     return tar;
 }
-void DestroyRMeshOnGPU(rMesh *tar) { checkCuda(cudaFree(tar->Dots)); checkCuda(cudaFree(tar)); return; }
+//void DestroyRMeshOnGPU(rMesh *tar) { checkCuda(cudaFree(tar->Dots)); checkCuda(cudaFree(tar)); return; }
 
 struct rBond {
     int S, T, s, t;
@@ -401,6 +402,7 @@ void DestroyRBonds(rBonds* self) {
     free(self);
     return;
 }
+/*
 rBonds* CopyRBondsToGPU(rBonds* self) {
     rBonds* tar = NULL;
     checkCuda(cudaMallocManaged(&tar, sizeof(rBonds)));
@@ -419,8 +421,8 @@ void DestroyRBondsOnGPU(rBonds *self) {
     checkCuda(cudaFree(self));
     return;
 }
-
-
+*/
+/*
 template <unsigned int blockSize>
 __device__ void warpReduce(volatile double *sdata, unsigned int tid) {
     if (blockSize >= 64) sdata[tid] += sdata[tid + 32];
@@ -523,7 +525,7 @@ void GetEnergyGPU(rMesh *tar, SuperCell *str, rBonds *RBonds) {
     DestroyRBondsOnGPU(gBonds);
     return;
 }
-
+*/
 double GetDeltaEM_CPU(rMesh *Mesh, SuperCell* superCell, int X, int Y, int Z, int n, Vec3 S) {
     int id1 = ((X * superCell->b + Y) * superCell->c + Z) * superCell->unitCell.N + n;
     int id2;
