@@ -108,8 +108,8 @@ int main() {
             for (int i = 0; i < mcInfo.TSteps; ++i) {
                 printf("%6.2lf, %12.8lf, %12.8lf, \n", 
                     mcInfo.TStart + i * mcInfo.TDelta, 
-                    SMag[i].z / N / superCell->unitCell.Dots[0].Norm,
-                    SMagA[i] / N / superCell->unitCell.Dots[0].Norm);
+                    SMag[i].z / N,
+                    SMagA[i] / N);
             }
         }
     } else {
@@ -120,8 +120,8 @@ int main() {
             Vec3 H = mcInfo.HStart;
             for (int j = 0; j < NH; ++j) {
                 printf("%20.8lf, %20.8lf, %20.8lf\n", H.z, 
-                        SMag[i * NH + j].z / N / superCell->unitCell.Dots[0].Norm, 
-                        SMagA[i * NH + j] / N / superCell->unitCell.Dots[0].Norm);
+                        SMag[i * NH + j].z / N, 
+                        SMagA[i * NH + j] / N);
                 int t = (j / mcInfo.HTimes);
                 if ((t & 3) == 0 || (t & 3) == 3) H = Add(H, mcInfo.HDelta);
                 else H = Add(H, Rev(mcInfo.HDelta));

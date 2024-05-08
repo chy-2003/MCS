@@ -276,22 +276,17 @@ rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T, int Model, void (*G
     self->NDots = n * self->N;
     self->Dots = NULL;
     self->Dots = (Vec3*)malloc(self->NDots * sizeof(Vec3));
+    std::random_device RandomDevice;
+    std::mt19937 Mt19937(RandomDevice());
+    std::uniform_real_distribution<> URD(0, 1);
     for (int i = 0; i < self->N; ++i) {
-        std::random_device RandomDevice;
-        std::mt19937 Mt19937(RandomDevice());
-        std::uniform_real_distribution<> URD(0, 1);
         for (int j = 0; j < n; ++j) {
-            self->Dots[i * n + j] = GetVec3(superCell->unitCell.Dots[j].Norm, Model, URD(Mt19937), URD(Mt19937));
-            //self->Dots[i * n + j] = Vec3(0, 0, superCell->unitCell.Dots[j].Norm);
+            //self->Dots[i * n + j] = GetVec3(superCell->unitCell.Dots[j].Norm, Model, URD(Mt19937), URD(Mt19937));
+            self->Dots[i * n + j] = Vec3(0, 0, ((i / superCell->b + i % superCell->b) & 1) ? 
+                    -superCell->unitCell.Dots[j].Norm : superCell->unitCell.Dots[j].Norm);
         }
     }
 
-/*
-    for (int i = 0; i < superCell->a; ++i) {
-        for (int j = 0; j < superCell->b; ++j) 
-            self->Dots[i * superCell->b + j].z = 0.45 * (((i + j) & 1) ? -1 : 1);
-    }
-*/
     self->Mag = Vec3(0, 0, 0);
     for (int i = 0; i < superCell->a; ++i)
         for (int j = 0; j < superCell->b; ++j)
@@ -299,11 +294,10 @@ rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T, int Model, void (*G
                 for (int l = 0; l < superCell->unitCell.N; ++l) {
                     self->Mag = Add(self->Mag, 
                             Mul(self->Dots[((i * superCell->b + j) * superCell->c + k) * superCell->unitCell.N + l], Coefficient(i, j, k)));
-                    //printf("%d %d %d %d, %.2lf\n", i, j, k, l, 
-                    //    Mul(self->Dots[((i * superCell->b + j) * superCell->c + k) * superCell->unitCell.N + l], Coefficient(i, j, k)).z);
                 }
 
     GetEnergy(self, superCell);
+    printf("Energy = %12.8lf, T = %.2lf\n", self->Energy, self->T);
     return self;
 }
 void DestroyRMesh(rMesh *Tar) { free(Tar->Dots); free(Tar); return; }
