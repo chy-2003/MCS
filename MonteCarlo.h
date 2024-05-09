@@ -48,7 +48,7 @@ struct MCInfo {
 	int NTimes;
 	double TStart, TDelta;
 	int TSteps;
-	int PTCnt, PTInterval;
+	int PTCnt, PTInterval, PTSkip;
 	double PTDT;
 	int HSteps;
 	Vec3 HStart, HDelta;
@@ -67,7 +67,7 @@ MCInfo InitMCInfo(FILE *file) {
 	MCInfo Ans;
 	fscanf(file, "%d%d%d", &Ans.NSkip, &Ans.NCall, &Ans.NTimes);
 	fscanf(file, "%lf%lf%d", &Ans.TStart, &Ans.TDelta, &Ans.TSteps);
-	fscanf(file, "%d%lf%d", &Ans.PTCnt, &Ans.PTDT, &Ans.PTInterval);
+	fscanf(file, "%d%lf%d%d", &Ans.PTCnt, &Ans.PTDT, &Ans.PTInterval, &Ans.PTSkip);
 	fscanf(file, "%d", &Ans.HSteps);
 	fscanf(file, "%lf%lf%lf", &Ans.HStart.x, &Ans.HStart.y, &Ans.HStart.z);
 	fscanf(file, "%lf%lf%lf", &Ans.HDelta.x, &Ans.HDelta.y, &Ans.HDelta.z);
@@ -114,14 +114,14 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
 
 	double ProgressCnt = 0;
 	double TotalCnt = 1.0 * TotalMesh * (mcInfo.NSkip + mcInfo.NCall);
-
+/*
 	for (int j = 0; j < superCell->b; ++j) { 
 		for (int i = 0; i < superCell->a; ++i)
 			printf("%c", (Mesh[0]->Dots[i * superCell->b + j].z > 0) ? 'O' : '.');
 		printf("\n");
 	}
 	printf("%12.6lf, Energy = %12.6lf\n", Mesh[0]->Mag.z, Mesh[0]->Energy);
-
+*/
 	#pragma omp parallel for num_threads(MaxThreads)
 	for (int step = 0; step < TotalMesh; ++step) {
 		std::random_device RandomDevice;
@@ -199,7 +199,8 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
 					}
 				}
 			}
-			if (i >= mcInfo.NSkip) returnFunc(step, Mesh[step * mcInfo.PTCnt], i);
+			if (i >= mcInfo.NSkip && i % mcInfo.PTInterval >= mcInfo.PTSkip) 
+				returnFunc(step, Mesh[step * mcInfo.PTCnt], i);
 			if ((i + 1) % ProgressCount == 0) {
 				#pragma omp critical (GetMCProgress)
 				{
@@ -209,14 +210,14 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
 			}
 		}
 	}
-
+/*
 	for (int j = 0; j < superCell->b; ++j) { 
 		for (int i = 0; i < superCell->a; ++i)
 			printf("%c", (Mesh[0]->Dots[i * superCell->b + j].z > 0) ? 'O' : '.');
 		printf("\n");
 	}
 	printf("%12.6lf, Energy = %12.6lf\n", Mesh[0]->Mag.z, Mesh[0]->Energy);
-
+*/
 	#pragma omp parallel for num_threads(MaxThreads)
 	for (int i = 0; i < TotalMesh; ++i) {
 		if (Mesh[i] != NULL) DestroyRMesh(Mesh[i]); 

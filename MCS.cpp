@@ -62,6 +62,7 @@ int main() {
             mcInfo.NSkip += (NH * mcInfo.HSteps) - mcInfo.NSkip % (NH * mcInfo.HSteps);
     }
     NS = mcInfo.NCall * mcInfo.NTimes / NH;
+    NS = 1LL * NS * (mcInfo.PTInterval - mcInfo.PTSkip) / mcInfo.PTInterval;
     fprintf(stderr, "[INFO][from MCS_main] NSkip = %d, NCall = %d\n", mcInfo.NSkip, mcInfo.NCall);
 
     int N = superCell->a * superCell->b * superCell->c * superCell->unitCell.N;
