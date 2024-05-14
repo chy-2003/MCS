@@ -276,14 +276,14 @@ rMesh* InitRMesh(SuperCell *superCell, Vec3 Field, double T, int Model, void (*G
     self->NDots = n * self->N;
     self->Dots = NULL;
     self->Dots = (Vec3*)malloc(self->NDots * sizeof(Vec3));
-    //std::random_device RandomDevice;
-    //std::mt19937 Mt19937(RandomDevice());
-    //std::uniform_real_distribution<> URD(0, 1);
+    std::random_device RandomDevice;
+    std::mt19937 Mt19937(RandomDevice());
+    std::uniform_real_distribution<> URD(0, 1);
     for (int i = 0; i < self->N; ++i) {
         for (int j = 0; j < n; ++j) {
-            //self->Dots[i * n + j] = GetVec3(superCell->unitCell.Dots[j].Norm, Model, URD(Mt19937), URD(Mt19937));
-            self->Dots[i * n + j] = Vec3(0, 0, ((i / superCell->b + i % superCell->b) & 1) ? 
-                    -superCell->unitCell.Dots[j].Norm : superCell->unitCell.Dots[j].Norm);
+            self->Dots[i * n + j] = GetVec3(superCell->unitCell.Dots[j].Norm, Model, URD(Mt19937), URD(Mt19937));
+            //self->Dots[i * n + j] = Vec3(0, 0, ((i / superCell->b + i % superCell->b) & 1) ? 
+            //        -superCell->unitCell.Dots[j].Norm : superCell->unitCell.Dots[j].Norm);
         }
     }
 

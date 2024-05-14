@@ -46,6 +46,7 @@ struct MCInfo {
 	int NSkip;
 	int NCall;
 	int NTimes;
+	double SimulatedAnnealing;
 	double TStart, TDelta;
 	int TSteps;
 	int PTCnt, PTInterval, PTSkip;
@@ -55,7 +56,7 @@ struct MCInfo {
 	int HTimes;
 	int Model;
 	int Alert;
-	MCInfo() : NSkip(0), NCall(0), NTimes(0), 
+	MCInfo() : NSkip(0), NCall(0), NTimes(0), SimulatedAnnealing(0), 
 			TStart(0), TDelta(0), TSteps(0), 
 			PTCnt(0), PTDT(0), PTInterval(0), 
 			HSteps(0), HStart(), HDelta(), HTimes(0), 
@@ -65,7 +66,7 @@ struct MCInfo {
 
 MCInfo InitMCInfo(FILE *file) {
 	MCInfo Ans;
-	fscanf(file, "%d%d%d", &Ans.NSkip, &Ans.NCall, &Ans.NTimes);
+	fscanf(file, "%d%d%d%lf", &Ans.NSkip, &Ans.NCall, &Ans.NTimes, &Ans.SimulatedAnnealing);
 	fscanf(file, "%lf%lf%d", &Ans.TStart, &Ans.TDelta, &Ans.TSteps);
 	fscanf(file, "%d%lf%d%d", &Ans.PTCnt, &Ans.PTDT, &Ans.PTInterval, &Ans.PTSkip);
 	fscanf(file, "%d", &Ans.HSteps);
@@ -87,22 +88,22 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
 			switch (superCell->Type) {
 			case ModelM :
 				Mesh[i * mcInfo.PTCnt + j] = InitRMesh(superCell, mcInfo.HStart, 
-					mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT, 
+					mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT + mcInfo.SimulatedAnnealing, 
 					mcInfo.Model, GetEnergyMCPU_NoOMP, CoefficientM);
 				break;
 			case ModelEC42AFE :
 				Mesh[i * mcInfo.PTCnt + j] = InitRMesh(superCell, mcInfo.HStart, 
-					mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT, 
+					mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT + mcInfo.SimulatedAnnealing, 
 					mcInfo.Model, GetEnergyMCPU_NoOMP, CoefficientEC42AFE);
 				break;
 			case ModelEP22AFE :
 				Mesh[i * mcInfo.PTCnt + j] = InitRMesh(superCell, mcInfo.HStart, 
-					mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT, 
+					mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT + mcInfo.SimulatedAnnealing, 
 					mcInfo.Model, GetEnergyMCPU_NoOMP, CoefficientEP22AFE);
 				break;
 			case ModelEP21FE :
 				Mesh[i * mcInfo.PTCnt + j] = InitRMesh(superCell, mcInfo.HStart, 
-					mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT, 
+					mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT + mcInfo.SimulatedAnnealing, 
 					mcInfo.Model, GetEnergyMCPU_NoOMP, CoefficientEP21FE);
 				break;
 			default:
@@ -114,14 +115,14 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
 
 	double ProgressCnt = 0;
 	double TotalCnt = 1.0 * TotalMesh * (mcInfo.NSkip + mcInfo.NCall);
-/*
+
 	for (int j = 0; j < superCell->b; ++j) { 
 		for (int i = 0; i < superCell->a; ++i)
 			printf("%c", (Mesh[0]->Dots[i * superCell->b + j].z > 0) ? 'O' : '.');
 		printf("\n");
 	}
 	printf("%12.6lf, Energy = %12.6lf\n", Mesh[0]->Mag.z, Mesh[0]->Energy);
-*/
+
 	#pragma omp parallel for num_threads(MaxThreads)
 	for (int step = 0; step < TotalMesh; ++step) {
 		std::random_device RandomDevice;
@@ -201,6 +202,11 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
 			}
 			if (i >= mcInfo.NSkip && i % mcInfo.PTInterval >= mcInfo.PTSkip) 
 				returnFunc(step, Mesh[step * mcInfo.PTCnt], i);
+			if (i < mcInfo.NSkip)
+				for (int j = 0; j < mcInfo.PTCnt; ++j)
+					Mesh[step * mcInfo.PTCnt + j]->T = mcInfo.TStart + 
+							mcInfo.TDelta * (step / mcInfo.NTimes) + j * mcInfo.PTDT + 
+							mcInfo.SimulatedAnnealing * (1.0 - 1.0 * i / mcInfo.NSkip);
 			if ((i + 1) % ProgressCount == 0) {
 				#pragma omp critical (GetMCProgress)
 				{
@@ -210,14 +216,14 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
 			}
 		}
 	}
-/*
+
 	for (int j = 0; j < superCell->b; ++j) { 
 		for (int i = 0; i < superCell->a; ++i)
 			printf("%c", (Mesh[0]->Dots[i * superCell->b + j].z > 0) ? 'O' : '.');
 		printf("\n");
 	}
 	printf("%12.6lf, Energy = %12.6lf\n", Mesh[0]->Mag.z, Mesh[0]->Energy);
-*/
+
 	#pragma omp parallel for num_threads(MaxThreads)
 	for (int i = 0; i < TotalMesh; ++i) {
 		if (Mesh[i] != NULL) DestroyRMesh(Mesh[i]); 
