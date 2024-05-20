@@ -43,19 +43,19 @@
 #define ProgressCount 100000
 
 struct MCInfo {
-	int NSkip;
-	int NCall;
-	int NTimes;
-	double SimulatedAnnealing;
-	double TStart, TDelta;
-	int TSteps;
-	int PTCnt, PTInterval, PTSkip;
-	double PTDT;
-	int HSteps;
-	Vec3 HStart, HDelta;
-	int HTimes;
-	int Model;
-	int Alert;
+	int NSkip;                                                       //达到热平衡步数
+	int NCall;                                                       //平衡态上移动步数
+	int NTimes;                                                      //重复模拟次数
+	double SimulatedAnnealing;                                       //NSkip 退火附加温度
+	double TStart, TDelta;                                           //起始模拟温度 和 相邻模拟温度之间的温度差
+	int TSteps;                                                      //总计模拟温度
+	int PTCnt, PTInterval, PTSkip;                                   //PTMC参数，分别为并行数(>=1)，交换间隔、交换后跳过步数
+	double PTDT;                                                     //相邻相温度差
+	int HSteps;                                                      //多少蒙卡步后改变外场
+	Vec3 HStart, HDelta;                                             //外场起始、每步外场该变量
+	int HTimes;                                                      // 1/4 外场周期中外场步数
+	int Model;                                                       //自由度，Ising/XY/Heisenberg
+	int Alert;                                                       //单次蒙卡步中最大尝试改变次数
 	MCInfo() : NSkip(0), NCall(0), NTimes(0), SimulatedAnnealing(0), 
 			TStart(0), TDelta(0), TSteps(0), 
 			PTCnt(0), PTDT(0), PTInterval(0), 
@@ -85,30 +85,9 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
 	#pragma omp parallel for num_threads(MaxThreads)
 	for (int i = 0; i < TotalMesh; ++i) {
 		for (int j = 0; j < mcInfo.PTCnt; ++j) {
-			switch (superCell->Type) {
-			case ModelM :
-				Mesh[i * mcInfo.PTCnt + j] = InitRMesh(superCell, mcInfo.HStart, 
-					mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT + mcInfo.SimulatedAnnealing, 
-					mcInfo.Model, GetEnergyMCPU_NoOMP, CoefficientM);
-				break;
-			case ModelEC42AFE :
-				Mesh[i * mcInfo.PTCnt + j] = InitRMesh(superCell, mcInfo.HStart, 
-					mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT + mcInfo.SimulatedAnnealing, 
-					mcInfo.Model, GetEnergyMCPU_NoOMP, CoefficientEC42AFE);
-				break;
-			case ModelEP22AFE :
-				Mesh[i * mcInfo.PTCnt + j] = InitRMesh(superCell, mcInfo.HStart, 
-					mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT + mcInfo.SimulatedAnnealing, 
-					mcInfo.Model, GetEnergyMCPU_NoOMP, CoefficientEP22AFE);
-				break;
-			case ModelEP21FE :
-				Mesh[i * mcInfo.PTCnt + j] = InitRMesh(superCell, mcInfo.HStart, 
-					mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT + mcInfo.SimulatedAnnealing, 
-					mcInfo.Model, GetEnergyMCPU_NoOMP, CoefficientEP21FE);
-				break;
-			default:
-				break;
-			}
+			Mesh[i * mcInfo.PTCnt + j] = InitRMesh(superCell, mcInfo.HStart, 
+				mcInfo.TStart + mcInfo.TDelta * (i / mcInfo.NTimes) + j * mcInfo.PTDT + mcInfo.SimulatedAnnealing, 
+				mcInfo.Model, GetEnergyMCPU_NoOMP);
 		}
 	}
 	fprintf(stderr, "[INFO][from MonteCarlo_MonteCarloMetropolisCPU] Mesh build ok.\n");
@@ -171,6 +150,9 @@ void MonteCarloMetropolisCPU(SuperCell *superCell, MCInfo mcInfo, void (*returnF
 							break;
 						case ModelEP21FE : 
 							Mesh[Step]->Mag = Add(Mesh[Step]->Mag, Mul(Add(S, Rev(Mesh[Step]->Dots[id])), CoefficientEP21FE(x, y, z)));
+							break;
+						case ModelES22 :
+							Mesh[Step]->Mag = Add(Mesh[Step]->Mag, CoefficientES22_Upd(superCell, Mesh[Step], x, y, z, S));
 							break;
 						default :
 							break;

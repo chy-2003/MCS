@@ -77,6 +77,7 @@
 #define ModelEC42AFE 1
 #define ModelEP22AFE 2
 #define ModelEP21FE  3
+#define ModelES22    4
 
 const double kB = 1.380649e-23;
 const double Pi = 3.14159265358979323846264;
@@ -95,6 +96,8 @@ inline Vec3 CoMul(const Vec3 &a, const Vec3 &b) { return Vec3(a.x * b.x, a.y * b
 inline double InMul(const Vec3 &a, const Vec3 &b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 inline Vec3 Mul(const Vec3 &a, const double &b) { return Vec3(a.x * b, a.y * b, a.z * b); }
 inline Vec3 Div(const Vec3 &a, const double &b) { return Vec3(a.x / b, a.y / b, a.z / b); }
+inline double Norm(const Vec3 &a) { return std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z); }
+inline Vec3 VAbs(const Vec3 &a) { return Vec3(std::fabs(a.x), std::fabs(a.y), std::fabs(a.z)); }
 
 struct Vec9 {                                                                                //3*3矩阵
     double xx, xy, xz, yx, yy, yz, zx, zy, zz;
@@ -191,7 +194,7 @@ void DestroyUnitCell(UnitCell *self) {
 }
 
 struct SuperCell {
-    int Type;
+    int Type;                                                                                 //序参量
     int a, b, c;
     UnitCell unitCell;
     SuperCell() : a(1), b(1), c(1), unitCell() {}
